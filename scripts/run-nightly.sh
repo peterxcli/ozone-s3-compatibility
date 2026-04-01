@@ -37,6 +37,21 @@ log() {
   printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"
 }
 
+wait_for_http_endpoint() {
+  local url="$1"
+  local timeout="${2:-60}"
+
+  SECONDS=0
+  while [[ ${SECONDS} -lt ${timeout} ]]; do
+    if curl -sS -o /dev/null --connect-timeout 2 --max-time 5 "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
 clone_repo() {
   local repo_url="$1"
   local repo_ref="$2"
@@ -98,9 +113,17 @@ if [[ ${BUILD_EXIT} -eq 0 ]]; then
   # shellcheck disable=SC1091
   source "${DIST_DIR}/compose/testlib.sh"
   set +e
-  start_docker_env "${OZONE_DATANODES}" 2>&1 | tee "${RAW_DIR}/ozone/start.log"
-  CLUSTER_EXIT=${PIPESTATUS[0]}
+  start_docker_env "${OZONE_DATANODES}" > >(tee "${RAW_DIR}/ozone/start.log") 2>&1
+  CLUSTER_EXIT=$?
   set -e
+  if [[ ${CLUSTER_EXIT} -eq 0 ]] && ! wait_for_http_endpoint "http://127.0.0.1:9878" 60; then
+    log "S3 gateway did not become reachable after compose startup"
+    CLUSTER_EXIT=1
+  fi
+  if [[ ${CLUSTER_EXIT} -ne 0 ]]; then
+    docker-compose ps -a > "${RAW_DIR}/ozone/compose-ps.log" 2>&1 || true
+    docker-compose logs --no-color > "${RAW_DIR}/ozone/compose.log" 2>&1 || true
+  fi
   popd >/dev/null
 fi
 
