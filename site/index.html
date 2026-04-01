@@ -37,41 +37,53 @@
       <section class="panel">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">Topline Trends</p>
-            <h2>Compatibility Over Time</h2>
-          </div>
-          <p class="panel-note">Rate is calculated as pass / (pass + fail + error).</p>
-        </div>
-        <div class="chart-grid">
-          <article class="chart-card">
-            <div class="chart-head">
-              <h3>Overall Suite Rate</h3>
-              <p>Daily compatibility trend for each suite.</p>
-            </div>
-            <canvas id="overall-chart" height="140"></canvas>
-          </article>
-          <article class="chart-card">
-            <div class="chart-head">
-              <div>
-                <h3>Feature Trend</h3>
-                <p>Top features from the latest run, grouped by suite.</p>
-              </div>
-              <div id="feature-suite-tabs" class="tabs"></div>
-            </div>
-            <canvas id="feature-chart" height="140"></canvas>
-          </article>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <div>
             <p class="eyebrow">Latest Run</p>
             <h2>Current Report</h2>
           </div>
           <p class="panel-note">The latest nightly run is expanded by default.</p>
         </div>
         <div id="latest-run" class="run-details loading">Loading latest run…</div>
+      </section>
+
+      <section class="panel">
+        <details id="trend-panel" class="panel-toggle">
+          <summary class="panel-header panel-summary">
+            <div>
+              <p class="eyebrow">Topline Trends</p>
+              <h2>Compatibility Over Time</h2>
+            </div>
+            <div class="panel-summary-side">
+              <p class="panel-note">Rate is calculated as pass / (pass + fail + error).</p>
+              <span
+                id="trend-panel-label"
+                class="panel-toggle-chip"
+                data-open-label="Hide charts"
+                data-closed-label="Show charts"
+              >
+                Show charts
+              </span>
+            </div>
+          </summary>
+          <div class="chart-grid">
+            <article class="chart-card">
+              <div class="chart-head">
+                <h3>Overall Suite Rate</h3>
+                <p>Daily compatibility trend for each suite.</p>
+              </div>
+              <canvas id="overall-chart" height="140"></canvas>
+            </article>
+            <article class="chart-card">
+              <div class="chart-head">
+                <div>
+                  <h3>Feature Trend</h3>
+                  <p>Top features from the latest run, grouped by suite.</p>
+                </div>
+                <div id="feature-suite-tabs" class="tabs"></div>
+              </div>
+              <canvas id="feature-chart" height="140"></canvas>
+            </article>
+          </div>
+        </details>
       </section>
 
       <section class="panel">
@@ -87,4 +99,3 @@
     </main>
   </body>
 </html>
-

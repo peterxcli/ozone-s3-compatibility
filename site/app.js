@@ -2,6 +2,7 @@ const COLORS = ["#0d7fab", "#ff8a3d", "#0f9d71", "#7a62ff", "#d2493a", "#0097a7"
 
 let overallChart;
 let featureChart;
+let chartsReady = false;
 
 function chartLabels(points) {
   return points.map((point) => point.started_at);
@@ -264,6 +265,48 @@ function buildFeatureTabs(index) {
   renderFeatureChart(index, latestAvailable);
 }
 
+function updateTrendPanelLabel() {
+  const label = document.getElementById("trend-panel-label");
+  const panel = document.getElementById("trend-panel");
+  if (!label || !panel) return;
+  label.textContent = panel.open ? label.dataset.openLabel : label.dataset.closedLabel;
+}
+
+function ensureCharts(index) {
+  if (chartsReady) {
+    overallChart?.resize();
+    featureChart?.resize();
+    return;
+  }
+  buildOverallChart(index);
+  buildFeatureTabs(index);
+  chartsReady = true;
+}
+
+function setupTrendPanel(index) {
+  const panel = document.getElementById("trend-panel");
+  if (!panel) return;
+
+  updateTrendPanelLabel();
+
+  const renderCharts = () => {
+    window.requestAnimationFrame(() => {
+      ensureCharts(index);
+    });
+  };
+
+  if (panel.open) {
+    renderCharts();
+  }
+
+  panel.addEventListener("toggle", () => {
+    updateTrendPanelLabel();
+    if (panel.open) {
+      renderCharts();
+    }
+  });
+}
+
 function renderMetrics(summary) {
   return `
     <div class="metrics">
@@ -492,8 +535,7 @@ async function main() {
   }
 
   renderHero(index);
-  buildOverallChart(index);
-  buildFeatureTabs(index);
+  setupTrendPanel(index);
   await renderLatest(index);
   renderHistory(index);
 }
