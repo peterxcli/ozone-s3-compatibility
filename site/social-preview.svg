@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Apache Ozone S3 Compatibility</title>
+  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint.</desc>
+
+  <defs>
+    <linearGradient id="page" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fbff" />
+      <stop offset="100%" stop-color="#f4f7fb" />
+    </linearGradient>
+    <radialGradient id="glowBlue" cx="18%" cy="18%" r="45%">
+      <stop offset="0%" stop-color="#0d7fab" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#0d7fab" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glowWarm" cx="86%" cy="14%" r="38%">
+      <stop offset="0%" stop-color="#ff8a3d" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#ff8a3d" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.96" />
+      <stop offset="100%" stop-color="#f7faff" stop-opacity="0.88" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#102d4c" flood-opacity="0.10" />
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#page)" />
+  <rect width="1200" height="630" fill="url(#glowBlue)" />
+  <rect width="1200" height="630" fill="url(#glowWarm)" />
+
+  <g filter="url(#shadow)">
+    <rect x="28" y="24" width="1144" height="582" rx="36" fill="#ffffff" fill-opacity="0.86" stroke="#ffffff" stroke-opacity="0.75" />
+  </g>
+
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#12263f">
+    <text x="60" y="78" font-size="15" font-weight="800" letter-spacing="3" fill="#0b6286">NIGHTLY GITHUB PAGES REPORT</text>
+
+    <text x="60" y="152" font-size="72" font-weight="800">Apache Ozone</text>
+    <text x="60" y="228" font-size="72" font-weight="800">S3</text>
+    <text x="60" y="304" font-size="72" font-weight="800">Compatibility</text>
+
+    <text x="60" y="368" font-size="20" font-weight="500" fill="#60758e">Tracks daily compatibility against ceph/s3-tests</text>
+    <text x="60" y="400" font-size="20" font-weight="500" fill="#60758e">and minio/mint from a fresh Ozone build and packaged cluster.</text>
+  </g>
+
+  <g font-family="'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="600">
+    <g transform="translate(60 456)">
+      <rect width="268" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
+      <text x="18" y="25" fill="#12263f">Apr 1, 2026, 9:47 PM GMT+8</text>
+    </g>
+    <g transform="translate(342 456)">
+      <rect width="188" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
+      <text x="18" y="25" fill="#12263f">Ozone 561cbeb3b247</text>
+    </g>
+  </g>
+
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">
+    <g transform="translate(544 456)">
+      <rect width="124" height="40" rx="20" fill="#0f9d71" fill-opacity="0.10" stroke="#0f9d71" stroke-opacity="0.24" />
+      <text x="20" y="26" fill="#0f9d71">Full nightly</text>
+    </g>
+    <g transform="translate(60 510)">
+      <rect width="112" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
+      <text x="24" y="26" fill="#12263f">completed</text>
+    </g>
+    <g transform="translate(186 510)">
+      <rect width="178" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
+      <text x="20" y="26" fill="#0b6286">GitHub Actions run</text>
+    </g>
+  </g>
+
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#12263f">
+    <g transform="translate(690 62)">
+      <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
+      <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">S3-TESTS</text>
+      <text x="24" y="86" font-size="22" font-weight="700">885 eligible cases</text>
+      <text x="24" y="152" font-size="58" font-weight="500">23.9%</text>
+      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">212 passed, 673 failed/error, 157 skipped</text>
+      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.0 pts vs previous</text>
+    </g>
+
+    <g transform="translate(690 342)">
+      <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
+      <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">MINT</text>
+      <text x="24" y="86" font-size="22" font-weight="700">52 eligible cases</text>
+      <text x="24" y="152" font-size="58" font-weight="500">84.6%</text>
+      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">44 passed, 8 failed/error, 2 skipped</text>
+      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+2.0 pts vs previous</text>
+    </g>
+  </g>
+</svg>
