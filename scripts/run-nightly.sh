@@ -23,6 +23,11 @@ MINT_REPO="${MINT_REPO:-https://github.com/minio/mint.git}"
 MINT_REF="${MINT_REF:-master}"
 MINT_MODE="${MINT_MODE:-core}"
 MINT_TARGETS="${MINT_TARGETS:-}"
+if [[ ${MINT_BUILD_TARGETS+x} ]]; then
+  EFFECTIVE_MINT_BUILD_TARGETS="${MINT_BUILD_TARGETS}"
+else
+  EFFECTIVE_MINT_BUILD_TARGETS="${MINT_TARGETS}"
+fi
 
 mkdir -p "${RAW_DIR}/ozone" "${RAW_DIR}/s3-tests" "${RAW_DIR}/mint" "${WORK_DIR}"
 
@@ -65,8 +70,87 @@ cleanup_cluster() {
   set +e
   if [[ "${COMPOSE_STOP_ATTEMPTED}" == "false" ]] && [[ "${OZONE_COMPOSE_RUNNING:-false}" == "true" ]] && declare -F stop_docker_env >/dev/null 2>&1; then
     COMPOSE_STOP_ATTEMPTED=true
+    if [[ -n "${COMPOSE_DIR:-}" && -d "${COMPOSE_DIR}" ]]; then
+      pushd "${COMPOSE_DIR}" >/dev/null || true
+    fi
     KEEP_RUNNING=false stop_docker_env
+    if [[ -n "${COMPOSE_DIR:-}" && -d "${COMPOSE_DIR}" ]]; then
+      popd >/dev/null || true
+    fi
   fi
+}
+
+build_mint_image() {
+  local context_dir="$1"
+  local image_tag="$2"
+  local build_log="$3"
+  local build_spec="${EFFECTIVE_MINT_BUILD_TARGETS:-}"
+  local targeted_release="${context_dir}/release-targeted.sh"
+  local targeted_dockerfile="${context_dir}/Dockerfile.targeted"
+
+  rm -f "${targeted_release}" "${targeted_dockerfile}"
+
+  if [[ -n "${build_spec}" ]]; then
+    local target=""
+    local -a build_targets=()
+    # shellcheck disable=SC2206
+    build_targets=(${build_spec})
+
+    cat > "${targeted_release}" <<'EOF'
+#!/bin/bash -e
+
+export MINT_ROOT_DIR=${MINT_ROOT_DIR:-/mint}
+source "${MINT_ROOT_DIR}"/source.sh
+EOF
+
+    for target in "${build_targets[@]}"; do
+      if [[ ! "${target}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        log "Invalid Mint build target: ${target}"
+        return 1
+      fi
+      if [[ ! -x "${context_dir}/build/${target}/install.sh" ]]; then
+        log "Unknown Mint build target: ${target}"
+        return 1
+      fi
+      printf 'echo "Running $MINT_ROOT_DIR/build/%s/install.sh"\n' "${target}" >> "${targeted_release}"
+      printf '"$MINT_ROOT_DIR/build/%s/install.sh"\n' "${target}" >> "${targeted_release}"
+    done
+
+    cat >> "${targeted_release}" <<'EOF'
+"${MINT_ROOT_DIR}"/postinstall.sh
+EOF
+
+    chmod +x "${targeted_release}"
+
+    cat > "${targeted_dockerfile}" <<'EOF'
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND noninteractive
+ENV LANG C.UTF-8
+ENV GOROOT /usr/local/go
+ENV GOPATH /usr/local/gopath
+ENV PATH $GOPATH/bin:$GOROOT/bin:$PATH
+ENV MINT_ROOT_DIR /mint
+
+RUN apt-get --yes update && apt-get --yes upgrade && \
+    apt-get --yes --quiet install wget jq curl git dnsmasq
+
+COPY . /mint
+
+WORKDIR /mint
+
+RUN /mint/create-data-files.sh
+RUN /mint/preinstall.sh
+RUN /mint/release-targeted.sh
+
+ENTRYPOINT ["/mint/entrypoint.sh"]
+EOF
+
+    docker build -f "${targeted_dockerfile}" -t "${image_tag}" "${context_dir}" > "${build_log}" 2>&1
+    return $?
+  fi
+
+  docker build -t "${image_tag}" "${context_dir}" > "${build_log}" 2>&1
 }
 
 trap cleanup_cluster EXIT
@@ -213,7 +297,7 @@ EOF
   fi
 
   log "Building Mint image"
-  if ! docker build -t ozone-compat-mint:local "${WORK_DIR}/mint" > "${RAW_DIR}/mint/docker-build.log" 2>&1; then
+  if ! build_mint_image "${WORK_DIR}/mint" ozone-compat-mint:local "${RAW_DIR}/mint/docker-build.log"; then
     MINT_EXIT=1
   else
     log "Running Mint"

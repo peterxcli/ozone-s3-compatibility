@@ -47,6 +47,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  PUBLISH_PAGES: ${{ github.event_name == 'schedule' || github.event.inputs.publish_pages == true || github.event.inputs.publish_pages == 'true' || inputs.publish_pages == true || inputs.publish_pages == 'true' || false }}
   OZONE_REPO: https://github.com/apache/ozone.git
   OZONE_REF: ${{ inputs.ozone_ref || 'master' }}
   S3_TESTS_REPO: https://github.com/ceph/s3-tests.git
@@ -70,6 +71,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Clean generated workspace state
+        run: |
+          rm -rf .pages-repo out/run out/pages
+
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
@@ -83,13 +88,19 @@ jobs:
 
       - name: Install workflow dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq maven rsync
+          missing=()
+          command -v jq >/dev/null 2>&1 || missing+=("jq")
+          command -v mvn >/dev/null 2>&1 || missing+=("maven")
+          command -v rsync >/dev/null 2>&1 || missing+=("rsync")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            sudo apt-get update
+            sudo apt-get install -y "${missing[@]}"
+          fi
           mvn -version | head -n 2
           docker compose version || docker-compose --version
 
       - name: Prepare gh-pages checkout
-        if: ${{ github.event_name == 'schedule' || inputs.publish_pages == true || inputs.publish_pages == 'true' }}
+        if: ${{ env.PUBLISH_PAGES == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -126,6 +137,7 @@ jobs:
 
       - name: Upload report artifacts
         if: ${{ always() }}
+        continue-on-error: ${{ env.ACT == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: compatibility-run-${{ steps.nightly.outputs.run_id || github.run_id }}
@@ -135,7 +147,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Publish gh-pages
-        if: ${{ always() && hashFiles('out/pages/index.html') != '' && (github.event_name == 'schedule' || inputs.publish_pages == true || inputs.publish_pages == 'true') }}
+        if: ${{ always() && hashFiles('out/pages/index.html') != '' && env.PUBLISH_PAGES == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

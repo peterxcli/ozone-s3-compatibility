@@ -1,4 +1,4 @@
--P ubuntu-latest=ghcr.io/catthehacker/ubuntu:full-latest
--P ubuntu-24.04=ghcr.io/catthehacker/ubuntu:full-24.04
---container-architecture linux/amd64
-
+--bind
+--env ACT=true
+-P ubuntu-latest=ozone-s3-compatibility/act-runner:latest
+-P ubuntu-24.04=ozone-s3-compatibility/act-runner:latest

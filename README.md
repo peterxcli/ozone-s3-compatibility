@@ -17,7 +17,7 @@ Each nightly run does this:
 2. Build the Ozone dist package
 3. Start the packaged compose cluster from the built artifact
 4. Clone and run `s3-tests`
-5. Clone and build `mint`, then run it against the same cluster
+5. Clone `mint`, build the required SDK/tool image payload, then run it against the same cluster
 6. Normalize both outputs into one run JSON
 7. Merge the new run into historical data and rebuild the static site
 8. Force-push the result to `gh-pages`
@@ -64,6 +64,8 @@ The workflow exposes `workflow_dispatch` inputs specifically so `nektos/act` can
 Recommended first pass:
 
 ```bash
+./scripts/build-act-runner.sh
+
 act workflow_dispatch \
   -W .github/workflows/nightly.yml \
   -e .github/act/nightly-event.json \
@@ -72,9 +74,14 @@ act workflow_dispatch \
 
 Notes:
 
-- `.actrc` is included with a full Ubuntu image mapping because this workflow needs Docker, Java, and Python.
+- `.actrc` maps `ubuntu-latest` and `ubuntu-24.04` to a local runner image with Docker, Java, Python, Maven, and rsync ready to go.
+- `./scripts/build-act-runner.sh` builds the local `ozone-s3-compatibility/act-runner:latest` image used by `.actrc`.
 - The full nightly path is heavy. Start with a narrow `s3-tests` selector and a small `mint_targets` list.
+- When `mint_targets` is set, the local Mint image build now installs only those selected SDK/tool targets by default.
 - Publishing is disabled in the sample `act` event file. Turn on `publish_pages` only when you actually want to push `gh-pages`.
+- Set `ACT_RUNNER_PLATFORM` before building if you need to force a non-default Docker platform for the local runner image.
+
+If you want to override the build-time subset independently of the runtime Mint selection, set `MINT_BUILD_TARGETS`. Leaving it unset makes the build follow `MINT_TARGETS`; setting it to an empty string forces the full Mint image build.
 
 ## Compatibility Rate
 
