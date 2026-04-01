@@ -89,7 +89,7 @@ jobs:
           docker compose version || docker-compose --version
 
       - name: Prepare gh-pages checkout
-        if: ${{ github.event_name == 'schedule' || inputs.publish_pages == true }}
+        if: ${{ github.event_name == 'schedule' || inputs.publish_pages == true || inputs.publish_pages == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -135,7 +135,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Publish gh-pages
-        if: ${{ always() && hashFiles('out/pages/index.html') != '' && (github.event_name == 'schedule' || inputs.publish_pages == true) }}
+        if: ${{ always() && hashFiles('out/pages/index.html') != '' && (github.event_name == 'schedule' || inputs.publish_pages == true || inputs.publish_pages == 'true') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
