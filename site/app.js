@@ -622,26 +622,38 @@ function renderCases(suite) {
   `;
 }
 
-function renderSuiteCard(suite) {
+function renderSuiteCard(suite, options = {}) {
+  const { open = true } = options;
+
   return `
-    <article class="suite-card">
-      <div class="suite-head">
-        <div>
-          <p class="eyebrow">${suite.label}</p>
-          <h3>${suite.status.replace(/_/g, " ")}</h3>
+    <details class="suite-card suite-toggle" ${open ? "open" : ""}>
+      <summary class="suite-summary">
+        <div class="suite-head">
+          <div>
+            <p class="eyebrow">${suite.label}</p>
+            <h3>${suite.status.replace(/_/g, " ")}</h3>
+          </div>
+          <div class="suite-summary-side">
+            <span class="pill">${formatPercent(suite.summary.compatibility_rate)}</span>
+            <span class="pill">${suite.summary.eligible} eligible</span>
+            <span class="status-pill ${statusClass(suite.status)}">${suite.status.replace(/_/g, " ")}</span>
+            <span class="panel-toggle-chip suite-toggle-chip">Details</span>
+          </div>
         </div>
-        <span class="status-pill ${statusClass(suite.status)}">${suite.status.replace(/_/g, " ")}</span>
+      </summary>
+      <div class="suite-body">
+        ${renderMetrics(suite.summary)}
+        ${renderFeatureTable(suite.feature_summaries || [])}
+        ${renderCases(suite)}
       </div>
-      ${renderMetrics(suite.summary)}
-      ${renderFeatureTable(suite.feature_summaries || [])}
-      ${renderCases(suite)}
-    </article>
+    </details>
   `;
 }
 
-function renderRunDetails(run) {
+function renderRunDetails(run, options = {}) {
+  const { defaultSuiteOpen = true } = options;
   const suiteMarkup = Object.values(run.suites || {})
-    .map((suite) => renderSuiteCard(suite))
+    .map((suite) => renderSuiteCard(suite, { open: defaultSuiteOpen }))
     .join("");
 
   const actionLink = run.workflow_run_url ? `<a href="${run.workflow_run_url}">GitHub Actions run</a>` : "";
@@ -674,7 +686,7 @@ async function renderLatest(index) {
   const latest = index.runs[0];
   const fullRun = await fetchRun(latest.file);
   latestContainer.classList.remove("loading");
-  latestContainer.innerHTML = renderRunDetails(fullRun);
+  latestContainer.innerHTML = renderRunDetails(fullRun, { defaultSuiteOpen: true });
 }
 
 function renderHistoryItem(run, runIndex) {
@@ -708,7 +720,7 @@ function renderHistoryItem(run, runIndex) {
         </div>
         <div class="suite-summary-strip">${suiteStrips}</div>
       </div>
-      <div class="history-body">${renderRunDetails(run)}</div>
+      <div class="history-body">${renderRunDetails(run, { defaultSuiteOpen: false })}</div>
     </article>
   `;
 }
