@@ -6,8 +6,10 @@ The report keeps:
 
 - Daily suite-level compatibility trends for `s3-tests` and `mint`
 - Feature-level trend charts at the top of the page
+- Sticky top navigation for Latest Run, Topline Trends, and Archived Runs
 - The latest run shown as a full report
 - Every archived run shown inline with its suite details
+- A GitHub repo link in the published header
 - Run-scope labels so smoke or subset publishes are distinguishable from full nightlies
 
 ## Flow
@@ -21,7 +23,7 @@ Each nightly run does this:
 5. Clone `mint`, build the required SDK/tool image payload, then run it against the same cluster
 6. Normalize both outputs into one run JSON
 7. Merge the new run into historical data and rebuild the static site
-8. Force-push the result to `gh-pages`
+8. Force-push the rebuilt site and run data to `gh-pages`
 
 ## Repo Layout
 
@@ -41,6 +43,11 @@ Each nightly run does this:
 
 The workflow handles branch creation itself if `gh-pages` does not exist yet.
 If you only want to publish frontend changes from `site/` without rebuilding run history, trigger `refresh-pages-ui`. It updates the published UI files on `gh-pages` and leaves `data/` untouched.
+
+## Publish Paths
+
+- `nightly.yml`: runs Ozone, `s3-tests`, and Mint, normalizes a new run, rebuilds the full Pages output, and publishes both UI and `data/` to `gh-pages`
+- `refresh-pages-ui.yml`: copies only `site/index.html`, `site/app.js`, `site/styles.css`, and `.nojekyll` to `gh-pages`; existing published `data/` stays unchanged
 
 ## Local Run
 
