@@ -21,7 +21,7 @@ Each nightly run does this:
 5. Clone `mint`, build the required SDK/tool image payload, then run it against the same cluster
 6. Normalize both outputs into one run JSON
 7. Merge the new run into historical data and rebuild the static site
-8. Force-push the result to `gh-pages`
+8. Refresh `gh-pages`, rebuild against the latest published history, and push a normal update
 
 ## Repo Layout
 
@@ -39,6 +39,7 @@ Each nightly run does this:
 4. Leave the workflow permissions at the repository default, or allow `contents: write`.
 
 The workflow handles branch creation itself if `gh-pages` does not exist yet.
+When publishing, it refreshes the latest `gh-pages` branch immediately before the Pages build and again before the final push so new history is not overwritten by a stale checkout.
 
 ## Local Run
 

@@ -105,20 +105,6 @@ jobs:
         id: init
         run: bash scripts/nightly/init.sh
 
-      - name: Prepare gh-pages checkout
-        if: ${{ env.PUBLISH_PAGES == 'true' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code --heads "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages >/dev/null 2>&1; then
-            git clone --depth 1 --branch gh-pages "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" .pages-repo
-          else
-            git init .pages-repo
-            git -C .pages-repo checkout -b gh-pages
-            git -C .pages-repo remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          fi
-
       - name: Clone and patch upstream suites
         run: bash scripts/nightly/clone_sources.sh
 
@@ -145,18 +131,34 @@ jobs:
         if: ${{ always() && hashFiles('out/run/state/exports.env') != '' }}
         run: bash scripts/nightly/normalize_run.sh
 
+      - name: Prepare gh-pages checkout
+        if: ${{ env.PUBLISH_PAGES == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          remote_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          if git ls-remote --exit-code --heads "${remote_url}" gh-pages >/dev/null 2>&1; then
+            git clone --depth 1 --branch gh-pages "${remote_url}" .pages-repo
+          else
+            git init .pages-repo
+            git -C .pages-repo checkout -b gh-pages
+            git -C .pages-repo remote add origin "${remote_url}"
+          fi
+
       - name: Build Pages preview
         if: ${{ always() && hashFiles('out/run/**') != '' }}
         run: |
           set -euo pipefail
-          existing_runs=""
+          build_args=(
+            --output-dir out/pages
+            --new-run out/run
+          )
           if [ -d ".pages-repo/data/runs" ]; then
-            existing_runs="--existing-runs-dir .pages-repo/data/runs"
+            build_args+=(--existing-runs-dir .pages-repo/data/runs)
           fi
-          python3 scripts/build_pages.py \
-            --output-dir out/pages \
-            --new-run out/run \
-            ${existing_runs}
+          python3 scripts/build_pages.py "${build_args[@]}"
 
       - name: Explain publish gate
         if: ${{ always() }}
@@ -210,6 +212,24 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if git -C .pages-repo ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git -C .pages-repo fetch --depth 1 origin gh-pages
+            if git -C .pages-repo rev-parse --verify HEAD >/dev/null 2>&1; then
+              git -C .pages-repo merge --ff-only FETCH_HEAD
+            else
+              git -C .pages-repo checkout -B gh-pages FETCH_HEAD
+            fi
+          fi
+
+          build_args=(
+            --output-dir out/pages
+            --new-run out/run
+          )
+          if [ -d ".pages-repo/data/runs" ]; then
+            build_args+=(--existing-runs-dir .pages-repo/data/runs)
+          fi
+          python3 scripts/build_pages.py "${build_args[@]}"
+
           rsync -a --delete --exclude '.git/' out/pages/ .pages-repo/
           touch .pages-repo/.nojekyll
           git -C .pages-repo config user.name "github-actions[bot]"
@@ -220,4 +240,4 @@ jobs:
             exit 0
           fi
           git -C .pages-repo commit -m "Nightly compatibility report for ${{ steps.init.outputs.run_id || github.run_id }}"
-          git -C .pages-repo push --force origin gh-pages
+          git -C .pages-repo push origin gh-pages
