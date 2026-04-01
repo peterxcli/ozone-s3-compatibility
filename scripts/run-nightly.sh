@@ -407,6 +407,7 @@ python3 "${ROOT_DIR}/scripts/normalize_run.py" \
   --mint-ref "${MINT_REF}" \
   --mint-commit "${MINT_COMMIT}" \
   --mint-log "${RAW_DIR}/mint/log/log.json" \
+  --mint-console "${RAW_DIR}/mint/console.log" \
   --mint-exit "${MINT_EXIT}" \
   --mint-mode "${MINT_MODE}" \
   --mint-targets "${MINT_TARGETS}" \

@@ -134,6 +134,7 @@ def recover_run_from_artifact(run_path: Path) -> dict[str, Any]:
         mint_ref="unknown",
         mint_commit="unknown",
         mint_log=str(mint_log),
+        mint_console=str(console_log),
         mint_exit=0 if mint_log.exists() else 1,
         mint_mode=infer_mint_mode(console_log),
         mint_targets=infer_mint_targets(console_log),

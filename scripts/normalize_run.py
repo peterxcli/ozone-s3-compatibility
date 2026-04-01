@@ -6,6 +6,7 @@ import argparse
 import ast
 import json
 import os
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mint-ref", required=True)
     parser.add_argument("--mint-commit", required=True)
     parser.add_argument("--mint-log", required=True)
+    parser.add_argument("--mint-console", default="")
     parser.add_argument("--mint-exit", type=int, default=0)
     parser.add_argument("--mint-mode", default="core")
     parser.add_argument("--mint-targets", default="")
@@ -288,28 +290,99 @@ def normalize_mint_status(raw_status: str) -> str:
     return "skipped"
 
 
-def normalize_mint_suite(args: argparse.Namespace) -> dict[str, Any]:
-    log_path = Path(args.mint_log)
+def parse_mint_cases(log_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     cases: list[dict[str, Any]] = []
-    if log_path.exists():
-        for line in log_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            cases.append(
+    raw_lines = 0
+    non_json_lines: list[str] = []
+
+    if not log_path.exists():
+        return cases, {
+            "raw_nonempty_line_count": 0,
+            "parsed_case_count": 0,
+            "non_json_line_count": 0,
+            "non_json_line_samples": [],
+        }
+
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        raw_lines += 1
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            non_json_lines.append(truncate(line, 200))
+            continue
+
+        cases.append(
+            {
+                "name": entry.get("function", ""),
+                "classname": entry.get("name", ""),
+                "features": [entry.get("name", "misc")],
+                "status": normalize_mint_status(entry.get("status", "")),
+                "duration_ms": int(entry.get("duration", 0) or 0),
+                "message": truncate(entry.get("message", "") or entry.get("alert", "")),
+                "detail": truncate(entry.get("error", "")),
+            }
+        )
+
+    return cases, {
+        "raw_nonempty_line_count": raw_lines,
+        "parsed_case_count": len(cases),
+        "non_json_line_count": len(non_json_lines),
+        "non_json_line_samples": non_json_lines[:5],
+    }
+
+
+def parse_mint_console(console_path: Path) -> dict[str, Any]:
+    payload = {
+        "executed_target_count": None,
+        "successful_target_count": None,
+        "target_runs": [],
+    }
+    if not console_path.exists():
+        return payload
+
+    target_runs: list[dict[str, Any]] = []
+    total_targets = None
+    successful_targets = None
+
+    for raw_line in console_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        match = re.match(
+            r"^\((\d+)/(\d+)\) Running ([A-Za-z0-9._+-]+) tests \.\.\. (done|FAILED)(?: in (.+))?$",
+            line,
+        )
+        if match:
+            _index, total, target_name, raw_status, duration_label = match.groups()
+            total_targets = int(total)
+            target_runs.append(
                 {
-                    "name": entry.get("function", ""),
-                    "classname": entry.get("name", ""),
-                    "features": [entry.get("name", "misc")],
-                    "status": normalize_mint_status(entry.get("status", "")),
-                    "duration_ms": int(entry.get("duration", 0) or 0),
-                    "message": truncate(entry.get("message", "") or entry.get("alert", "")),
-                    "detail": truncate(entry.get("error", "")),
+                    "name": target_name,
+                    "status": "pass" if raw_status == "done" else "fail",
+                    "duration_label": duration_label or "",
                 }
             )
+            continue
+
+        summary_match = re.match(r"^Executed (\d+) out of (\d+) tests successfully\.$", line)
+        if summary_match:
+            successful_targets = int(summary_match.group(1))
+            total_targets = int(summary_match.group(2))
+
+    payload["executed_target_count"] = total_targets
+    payload["successful_target_count"] = successful_targets
+    payload["target_runs"] = target_runs
+    return payload
+
+
+def normalize_mint_suite(args: argparse.Namespace) -> dict[str, Any]:
+    log_path = Path(args.mint_log)
+    cases, parse_info = parse_mint_cases(log_path)
+    console_info = parse_mint_console(Path(args.mint_console)) if args.mint_console else {
+        "executed_target_count": None,
+        "successful_target_count": None,
+        "target_runs": [],
+    }
 
     suite_status = "completed" if cases else "not_run"
     if args.mint_exit and not cases:
@@ -323,6 +396,8 @@ def normalize_mint_suite(args: argparse.Namespace) -> dict[str, Any]:
         "summary": summarize_cases(cases),
         "feature_summaries": build_feature_summaries(cases),
         "included_case_strategy": "all",
+        "target_execution": console_info,
+        "log_parse": parse_info,
         "cases": cases,
     }
 
