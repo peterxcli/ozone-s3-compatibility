@@ -48,6 +48,8 @@ concurrency:
 
 env:
   PUBLISH_PAGES: ${{ github.event_name == 'schedule' || github.event.inputs.publish_pages == true || github.event.inputs.publish_pages == 'true' || inputs.publish_pages == true || inputs.publish_pages == 'true' || false }}
+  OUTPUT_ROOT: ${{ github.workspace }}/out/run
+  WORK_DIR: ${{ github.workspace }}/.work
   OZONE_REPO: https://github.com/apache/ozone.git
   OZONE_REF: ${{ inputs.ozone_ref || 'master' }}
   S3_TESTS_REPO: https://github.com/ceph/s3-tests.git
@@ -73,7 +75,7 @@ jobs:
 
       - name: Clean generated workspace state
         run: |
-          rm -rf .pages-repo out/run out/pages
+          rm -rf .pages-repo out/run out/pages .work
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -99,6 +101,10 @@ jobs:
           mvn -version | head -n 2
           docker compose version || docker-compose --version
 
+      - name: Initialize nightly run context
+        id: init
+        run: bash scripts/nightly/init.sh
+
       - name: Prepare gh-pages checkout
         if: ${{ env.PUBLISH_PAGES == 'true' }}
         env:
@@ -113,14 +119,31 @@ jobs:
             git -C .pages-repo remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           fi
 
-      - name: Run nightly compatibility job
-        id: nightly
-        run: |
-          set -euo pipefail
-          export OUTPUT_ROOT="$PWD/out/run"
-          export RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-          echo "run_id=${RUN_ID}" >> "${GITHUB_OUTPUT}"
-          bash scripts/run-nightly.sh
+      - name: Clone and patch upstream suites
+        run: bash scripts/nightly/clone_sources.sh
+
+      - name: Build Ozone distribution
+        run: bash scripts/nightly/build_ozone.sh
+
+      - name: Start Ozone cluster
+        id: start_cluster
+        run: bash scripts/nightly/start_cluster.sh
+
+      - name: Run s3-tests
+        if: ${{ steps.start_cluster.outcome == 'success' }}
+        run: bash scripts/nightly/run_s3_tests.sh
+
+      - name: Run Mint
+        if: ${{ steps.start_cluster.outcome == 'success' }}
+        run: bash scripts/nightly/run_mint.sh
+
+      - name: Stop Ozone cluster
+        if: ${{ always() && hashFiles('out/run/state/exports.env') != '' }}
+        run: bash scripts/nightly/stop_cluster.sh
+
+      - name: Normalize nightly run
+        if: ${{ always() && hashFiles('out/run/state/exports.env') != '' }}
+        run: bash scripts/nightly/normalize_run.sh
 
       - name: Build Pages preview
         if: ${{ always() && hashFiles('out/run/**') != '' }}
@@ -156,6 +179,8 @@ jobs:
           echo "  github.event.inputs.publish_pages=${DEBUG_GITHUB_INPUT_PUBLISH_PAGES}"
           echo "  inputs.publish_pages=${DEBUG_INPUT_PUBLISH_PAGES}"
           echo "  env.PUBLISH_PAGES=${PUBLISH_PAGES}"
+          echo "  init.outcome=${{ steps.init.outcome }}"
+          echo "  start_cluster.outcome=${{ steps.start_cluster.outcome }}"
           echo "  out/run/run.json=${run_json_exists}"
           echo "  out/run directory=$( [ -d out/run ] && echo true || echo false )"
           echo "  out/pages/index.html=${pages_index_exists}"
@@ -173,7 +198,7 @@ jobs:
         continue-on-error: ${{ env.ACT == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: compatibility-run-${{ steps.nightly.outputs.run_id || github.run_id }}
+          name: compatibility-run-${{ steps.init.outputs.run_id || github.run_id }}
           path: |
             out/run
             out/pages
@@ -194,5 +219,5 @@ jobs:
             echo "No Pages changes to publish"
             exit 0
           fi
-          git -C .pages-repo commit -m "Nightly compatibility report for ${{ steps.nightly.outputs.run_id || github.run_id }}"
+          git -C .pages-repo commit -m "Nightly compatibility report for ${{ steps.init.outputs.run_id || github.run_id }}"
           git -C .pages-repo push --force origin gh-pages
