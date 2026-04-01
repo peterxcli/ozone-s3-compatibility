@@ -12,7 +12,7 @@ RUN_JSON="${RUN_DIR}/run.json"
 
 OZONE_REPO="${OZONE_REPO:-https://github.com/apache/ozone.git}"
 OZONE_REF="${OZONE_REF:-master}"
-OZONE_BUILD_ARGS="${OZONE_BUILD_ARGS:--Pdist -Dmaven.javadoc.skip=true -Drocks_tools_native}"
+OZONE_BUILD_ARGS="${OZONE_BUILD_ARGS:--Pdist -Dmaven.javadoc.skip=true -DskipRecon}"
 OZONE_DATANODES="${OZONE_DATANODES:-1}"
 
 S3_TESTS_REPO="${S3_TESTS_REPO:-https://github.com/ceph/s3-tests.git}"

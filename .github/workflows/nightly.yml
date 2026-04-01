@@ -57,7 +57,7 @@ env:
   MINT_MODE: ${{ inputs.mint_mode || 'core' }}
   MINT_TARGETS: ${{ inputs.mint_targets || '' }}
   OZONE_DATANODES: ${{ inputs.ozone_datanodes || '1' }}
-  OZONE_BUILD_ARGS: -Pdist -Dmaven.javadoc.skip=true -Drocks_tools_native
+  OZONE_BUILD_ARGS: -Pdist -Dmaven.javadoc.skip=true -DskipRecon
 
 jobs:
   nightly:
