@@ -6,6 +6,7 @@ const DEFAULT_OZONE_DATANODES = "1";
 let overallChart;
 let featureChart;
 let chartsReady = false;
+let pendingSectionTarget = null;
 
 function chartLabels(points) {
   return points.map((point) => point.started_at);
@@ -55,6 +56,19 @@ function statusClass(status) {
 
 function runId(run) {
   return run.run_id || run.id || "";
+}
+
+function slugify(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function archivedRunAnchorId(run, index = 0) {
+  const parts = [runId(run), run.started_at].map(slugify).filter(Boolean);
+  return `archived-run-${parts.join("-") || index + 1}`;
 }
 
 function executionForRun(run) {
@@ -385,6 +399,128 @@ function setupTrendPanel(index) {
   });
 }
 
+function setArchivedMenuOpen(open) {
+  const dropdown = document.querySelector(".sticky-dropdown");
+  const button = document.getElementById("archived-run-toggle");
+  if (!dropdown || !button) return;
+  dropdown.classList.toggle("open", open);
+  button.setAttribute("aria-expanded", String(open));
+}
+
+function ensureTrendPanelOpen(index) {
+  const panel = document.getElementById("trend-panel");
+  if (!panel) return;
+
+  if (!panel.open) {
+    panel.open = true;
+  }
+
+  window.requestAnimationFrame(() => {
+    ensureCharts(index);
+  });
+}
+
+function scrollToSection(sectionId, index) {
+  if (sectionId === "trend-panel-section") {
+    ensureTrendPanelOpen(index);
+  }
+
+  const target = document.getElementById(sectionId);
+  if (!target) {
+    pendingSectionTarget = sectionId;
+    return false;
+  }
+
+  pendingSectionTarget = null;
+  const stickyNav = document.querySelector(".sticky-nav");
+  const offset = (stickyNav?.offsetHeight || 0) + 24;
+  const top = window.scrollY + target.getBoundingClientRect().top - offset;
+  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  window.history.replaceState(null, "", `#${sectionId}`);
+  return true;
+}
+
+function flushPendingSectionTarget(index) {
+  if (!pendingSectionTarget) return;
+  scrollToSection(pendingSectionTarget, index);
+}
+
+function renderArchivedNavigation(index) {
+  const nav = document.getElementById("archived-run-nav");
+  if (!nav) return;
+
+  const archivedRuns = index.runs.slice(1);
+  if (!archivedRuns.length) {
+    nav.innerHTML = `<span class="sticky-dropdown-empty">No archived runs yet.</span>`;
+    return;
+  }
+
+  nav.innerHTML = archivedRuns
+    .map(
+      (run, runIndex) => `
+        <a
+          class="sticky-dropdown-link"
+          href="#${archivedRunAnchorId(run, runIndex)}"
+          data-target="${archivedRunAnchorId(run, runIndex)}"
+          role="menuitem"
+        >
+          ${text(formatDate(run.started_at))}
+        </a>
+      `
+    )
+    .join("");
+}
+
+function setupStickyNavigation(index) {
+  document.querySelectorAll(".sticky-link[data-target]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      scrollToSection(link.dataset.target, index);
+      setArchivedMenuOpen(false);
+    });
+  });
+
+  document.querySelectorAll(".sticky-dropdown-link[data-target]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      scrollToSection(link.dataset.target, index);
+      setArchivedMenuOpen(false);
+    });
+  });
+
+  const archivedToggle = document.getElementById("archived-run-toggle");
+  const archivedMenu = document.getElementById("archived-run-menu");
+
+  if (archivedToggle) {
+    archivedToggle.addEventListener("click", () => {
+      const shouldOpen = archivedToggle.getAttribute("aria-expanded") !== "true";
+      setArchivedMenuOpen(shouldOpen);
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if (!archivedToggle || !archivedMenu) return;
+    if (archivedToggle.contains(event.target) || archivedMenu.contains(event.target)) {
+      return;
+    }
+    setArchivedMenuOpen(false);
+  });
+
+  document.addEventListener("focusin", (event) => {
+    if (!archivedToggle || !archivedMenu) return;
+    if (archivedToggle.contains(event.target) || archivedMenu.contains(event.target)) {
+      return;
+    }
+    setArchivedMenuOpen(false);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      setArchivedMenuOpen(false);
+    }
+  });
+}
+
 function renderMetrics(summary) {
   return `
     <div class="metrics">
@@ -541,7 +677,7 @@ async function renderLatest(index) {
   latestContainer.innerHTML = renderRunDetails(fullRun);
 }
 
-function renderHistoryItem(run) {
+function renderHistoryItem(run, runIndex) {
   const suiteStrips = Object.entries(run.suites || {})
     .map(
       ([suiteKey, suite]) => `
@@ -558,7 +694,7 @@ function renderHistoryItem(run) {
     .join("");
 
   return `
-    <article class="history-item">
+    <article id="${archivedRunAnchorId(run, runIndex)}" class="history-item section-anchor">
       <div class="history-summary">
         <div class="history-summary-head">
           <div>
@@ -587,7 +723,8 @@ async function renderHistory(index) {
   }
 
   const fullRuns = await Promise.all(archivedRuns.map((run) => fetchRun(run.file)));
-  list.innerHTML = fullRuns.map((run) => renderHistoryItem(run)).join("");
+  list.innerHTML = fullRuns.map((run, runIndex) => renderHistoryItem(run, runIndex)).join("");
+  flushPendingSectionTarget(index);
 }
 
 async function main() {
@@ -598,18 +735,29 @@ async function main() {
 
   const index = await response.json();
   if (!index.runs?.length) {
+    document.getElementById("archived-run-nav").innerHTML = `<span class="sticky-dropdown-empty">No archived runs yet.</span>`;
     document.getElementById("latest-run").innerHTML = `<div class="empty-state">No runs found yet.</div>`;
     document.getElementById("history-list").innerHTML = `<div class="empty-state">No archived runs are available yet.</div>`;
     return;
   }
 
   renderHero(index);
+  renderArchivedNavigation(index);
   setupTrendPanel(index);
+  setupStickyNavigation(index);
   await renderLatest(index);
   await renderHistory(index);
+
+  if (window.location.hash) {
+    scrollToSection(window.location.hash.slice(1), index);
+  }
 }
 
 main().catch((error) => {
+  const archivedNav = document.getElementById("archived-run-nav");
+  if (archivedNav) {
+    archivedNav.innerHTML = `<span class="sticky-dropdown-empty">${text(error.message)}</span>`;
+  }
   document.getElementById("latest-run").innerHTML = `<div class="loader">${error.message}</div>`;
   document.getElementById("history-list").innerHTML = `<div class="loader">${error.message}</div>`;
 });

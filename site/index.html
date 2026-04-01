@@ -21,6 +21,27 @@
   <body>
     <div class="backdrop"></div>
     <main class="shell">
+      <nav class="sticky-nav" aria-label="Section navigation">
+        <a class="sticky-link" href="#latest-run-section" data-target="latest-run-section">Latest Run</a>
+        <a class="sticky-link" href="#trend-panel-section" data-target="trend-panel-section">Topline Trends</a>
+        <div class="sticky-dropdown">
+          <button
+            id="archived-run-toggle"
+            class="sticky-link sticky-link-button"
+            type="button"
+            aria-expanded="false"
+            aria-controls="archived-run-menu"
+          >
+            Archived Runs
+          </button>
+          <div id="archived-run-menu" class="sticky-dropdown-panel" role="menu" aria-label="Archived runs">
+            <div id="archived-run-nav" class="sticky-dropdown-list">
+              <span class="sticky-dropdown-empty">Loading archived runs…</span>
+            </div>
+          </div>
+        </div>
+      </nav>
+
       <section class="hero">
         <div class="hero-copy">
           <p class="eyebrow">Nightly GitHub Pages Report</p>
@@ -34,7 +55,7 @@
         <div id="summary-cards" class="summary-cards"></div>
       </section>
 
-      <section class="panel">
+      <section id="latest-run-section" class="panel section-anchor">
         <div class="panel-header">
           <div>
             <p class="eyebrow">Latest Run</p>
@@ -45,7 +66,7 @@
         <div id="latest-run" class="run-details loading">Loading latest run…</div>
       </section>
 
-      <section class="panel">
+      <section id="trend-panel-section" class="panel section-anchor">
         <details id="trend-panel" class="panel-toggle">
           <summary class="panel-header panel-summary">
             <div>
@@ -86,7 +107,7 @@
         </details>
       </section>
 
-      <section class="panel">
+      <section id="history-section" class="panel section-anchor">
         <div class="panel-header">
           <div>
             <p class="eyebrow">History</p>
