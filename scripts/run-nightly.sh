@@ -23,6 +23,7 @@ MINT_REPO="${MINT_REPO:-https://github.com/minio/mint.git}"
 MINT_REF="${MINT_REF:-master}"
 MINT_MODE="${MINT_MODE:-core}"
 MINT_TARGETS="${MINT_TARGETS:-}"
+MINT_TIMEOUT_SECONDS="${MINT_TIMEOUT_SECONDS:-1800}"
 if [[ ${MINT_BUILD_TARGETS+x} ]]; then
   EFFECTIVE_MINT_BUILD_TARGETS="${MINT_BUILD_TARGETS}"
 else
@@ -40,6 +41,47 @@ COMPOSE_STOP_ATTEMPTED=false
 
 log() {
   printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"
+}
+
+run_with_timeout() {
+  local timeout_seconds="$1"
+  shift
+
+  if [[ -z "${timeout_seconds}" || "${timeout_seconds}" -le 0 ]]; then
+    "$@"
+    return $?
+  fi
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --kill-after=15 "${timeout_seconds}" "$@"
+    return $?
+  fi
+
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout --kill-after=15 "${timeout_seconds}" "$@"
+    return $?
+  fi
+
+  python3 - "${timeout_seconds}" "$@" <<'PY'
+import subprocess
+import sys
+
+timeout_seconds = int(sys.argv[1])
+command = sys.argv[2:]
+
+process = subprocess.Popen(command)
+
+try:
+    raise SystemExit(process.wait(timeout=timeout_seconds))
+except subprocess.TimeoutExpired:
+    try:
+        process.terminate()
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+    raise SystemExit(124)
+PY
 }
 
 wait_for_http_endpoint() {
@@ -153,7 +195,7 @@ EOF
   docker build -t "${image_tag}" "${context_dir}" > "${build_log}" 2>&1
 }
 
-trap cleanup_cluster EXIT
+trap cleanup_cluster EXIT HUP INT TERM
 
 log "Cloning Ozone ${OZONE_REF}"
 clone_repo "${OZONE_REPO}" "${OZONE_REF}" "${WORK_DIR}/ozone"
@@ -204,6 +246,7 @@ if [[ ${BUILD_EXIT} -eq 0 ]]; then
   start_docker_env "${OZONE_DATANODES}" > >(tee "${RAW_DIR}/ozone/start.log") 2>&1
   CLUSTER_EXIT=$?
   set -e
+  trap cleanup_cluster EXIT HUP INT TERM
   if [[ ${CLUSTER_EXIT} -eq 0 ]] && ! wait_for_http_endpoint "http://127.0.0.1:9878" 60; then
     log "S3 gateway did not become reachable after compose startup"
     CLUSTER_EXIT=1
@@ -305,24 +348,29 @@ EOF
     MINT_EXIT=1
   else
     log "Running Mint"
-    mint_args=()
+    mint_create_cmd=(
+      docker create
+      --network host
+      -e SERVER_ENDPOINT=127.0.0.1:9878
+      -e ACCESS_KEY=OZONEACCESSKEY000001
+      -e SECRET_KEY=ozone-secret-key-main-0000000000000001
+      -e ENABLE_HTTPS=0
+      -e MINT_MODE="${MINT_MODE}"
+      ozone-compat-mint:local
+    )
     if [[ -n "${MINT_TARGETS}" ]]; then
       # shellcheck disable=SC2206
-      mint_args=(${MINT_TARGETS})
+      mint_create_cmd+=(${MINT_TARGETS})
     fi
-    MINT_CONTAINER_ID="$(docker create \
-      --network host \
-      -e SERVER_ENDPOINT=127.0.0.1:9878 \
-      -e ACCESS_KEY=OZONEACCESSKEY000001 \
-      -e SECRET_KEY=ozone-secret-key-main-0000000000000001 \
-      -e ENABLE_HTTPS=0 \
-      -e MINT_MODE="${MINT_MODE}" \
-      ozone-compat-mint:local \
-      "${mint_args[@]}")"
+    MINT_CONTAINER_ID="$("${mint_create_cmd[@]}")"
     set +e
-    docker start -a "${MINT_CONTAINER_ID}" 2>&1 | tee "${RAW_DIR}/mint/console.log"
+    run_with_timeout "${MINT_TIMEOUT_SECONDS}" docker start -a "${MINT_CONTAINER_ID}" \
+      2>&1 | tee "${RAW_DIR}/mint/console.log"
     MINT_EXIT=${PIPESTATUS[0]}
     set -e
+    if [[ ${MINT_EXIT} -eq 124 ]]; then
+      log "Mint exceeded timeout (${MINT_TIMEOUT_SECONDS}s)"
+    fi
     docker cp "${MINT_CONTAINER_ID}:/mint/log" "${RAW_DIR}/mint/log" >/dev/null 2>&1 || true
     docker rm -f "${MINT_CONTAINER_ID}" >/dev/null 2>&1 || true
   fi

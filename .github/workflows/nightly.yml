@@ -135,6 +135,38 @@ jobs:
             --new-run out/run/run.json \
             ${existing_runs}
 
+      - name: Explain publish gate
+        if: ${{ always() }}
+        env:
+          DEBUG_GITHUB_INPUT_PUBLISH_PAGES: ${{ github.event.inputs.publish_pages || '' }}
+          DEBUG_INPUT_PUBLISH_PAGES: ${{ inputs.publish_pages || '' }}
+        run: |
+          set -euo pipefail
+          run_json_exists=false
+          pages_index_exists=false
+          if [ -f out/run/run.json ]; then
+            run_json_exists=true
+          fi
+          if [ -f out/pages/index.html ]; then
+            pages_index_exists=true
+          fi
+
+          echo "Publish gate debug:"
+          echo "  github.event_name=${GITHUB_EVENT_NAME}"
+          echo "  github.event.inputs.publish_pages=${DEBUG_GITHUB_INPUT_PUBLISH_PAGES}"
+          echo "  inputs.publish_pages=${DEBUG_INPUT_PUBLISH_PAGES}"
+          echo "  env.PUBLISH_PAGES=${PUBLISH_PAGES}"
+          echo "  out/run/run.json=${run_json_exists}"
+          echo "  out/pages/index.html=${pages_index_exists}"
+
+          if [ "${PUBLISH_PAGES}" != "true" ]; then
+            echo "Publish would be skipped because PUBLISH_PAGES is not true."
+          elif [ "${pages_index_exists}" != "true" ]; then
+            echo "Publish would be skipped because out/pages/index.html is missing."
+          else
+            echo "Publish gate satisfied."
+          fi
+
       - name: Upload report artifacts
         if: ${{ always() }}
         continue-on-error: ${{ env.ACT == 'true' }}
