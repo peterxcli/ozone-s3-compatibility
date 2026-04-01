@@ -1,0 +1,260 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-04-01T06-12-51Z",
+  "started_at": "2026-04-01T06:12:51Z",
+  "finished_at": "2026-04-01T06:38:24Z",
+  "status": "completed",
+  "rate_formula": "compatibility_rate = passed / (passed + failed + errored); skipped and NA are excluded",
+  "workflow_run_url": "https://github.com/peterxcli/ozone-s3-compatibility/actions/runs/1",
+  "orchestration": {
+    "build_exit_code": 0,
+    "cluster_exit_code": 0
+  },
+  "sources": {
+    "ozone": {
+      "repo": "https://github.com/apache/ozone.git",
+      "ref": "master",
+      "commit": "644a018e63a42225307036375c7cf2e7c1178917",
+      "short_commit": "644a018e63a4"
+    },
+    "s3_tests": {
+      "repo": "https://github.com/ceph/s3-tests.git",
+      "ref": "master",
+      "commit": "c29bf103f62df65ed342ca4efb1f6d41a77e81e7",
+      "short_commit": "c29bf103f62d"
+    },
+    "mint": {
+      "repo": "https://github.com/minio/mint.git",
+      "ref": "master",
+      "commit": "12559d50625b722d11fd798ae8ac2fb204e66dd1",
+      "short_commit": "12559d50625b"
+    }
+  },
+  "suites": {
+    "s3_tests": {
+      "key": "s3_tests",
+      "label": "s3-tests",
+      "status": "completed",
+      "exit_code": 0,
+      "summary": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "errored": 0,
+        "skipped": 0,
+        "eligible": 1,
+        "compatibility_rate": 1.0
+      },
+      "feature_summaries": [
+        {
+          "name": "s3",
+          "label": "s3",
+          "summary": {
+            "total": 1,
+            "passed": 1,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 0,
+            "eligible": 1,
+            "compatibility_rate": 1.0
+          },
+          "examples": []
+        }
+      ],
+      "included_case_strategy": "non_passing_only",
+      "non_passing_cases": []
+    },
+    "mint": {
+      "key": "mint",
+      "label": "mint",
+      "status": "completed",
+      "exit_code": 1,
+      "summary": {
+        "total": 12,
+        "passed": 10,
+        "failed": 2,
+        "errored": 0,
+        "skipped": 0,
+        "eligible": 12,
+        "compatibility_rate": 0.8333
+      },
+      "feature_summaries": [
+        {
+          "name": "awscli",
+          "label": "awscli",
+          "summary": {
+            "total": 11,
+            "passed": 10,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0,
+            "eligible": 11,
+            "compatibility_rate": 0.9091
+          },
+          "examples": [
+            {
+              "name": "aws --endpoint-url http://127.0.0.1:9878 s3 presign s3://awscli-mint-test-bucket-23281/datafile-1-kB\n",
+              "status": "fail",
+              "message": ""
+            }
+          ]
+        },
+        {
+          "name": "healthcheck",
+          "label": "healthcheck",
+          "summary": {
+            "total": 1,
+            "passed": 0,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0,
+            "eligible": 1,
+            "compatibility_rate": 0.0
+          },
+          "examples": [
+            {
+              "name": "testLivenessEndpoint",
+              "status": "fail",
+              "message": "GET /minio/health/live returned 403 Forbidden"
+            }
+          ]
+        }
+      ],
+      "included_case_strategy": "all",
+      "cases": [
+        {
+          "name": "testLivenessEndpoint",
+          "classname": "healthcheck",
+          "features": [
+            "healthcheck"
+          ],
+          "status": "fail",
+          "duration_ms": 379,
+          "message": "GET /minio/health/live returned 403 Forbidden",
+          "detail": ""
+        },
+        {
+          "name": "make_bucket\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1196,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api get-object --bucket awscli-mint-test-bucket-16983 --key datafile-1-kB /tmp/datafile-1-kB\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 3338,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api head-object --bucket awscli-mint-test-bucket-30803 --key prefix/directory/datafile-1-kB\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1892,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api list-objects --bucket awscli-mint-test-bucket-12219 --prefix datafile-1-kB\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1673,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api get-object --bucket awscli-mint-test-bucket-24852 --key awscli-mint-test-bucket-24852-object /tmp/datafile-0-b\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1459,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api create-multipart-upload --bucket awscli-mint-test-bucket-13896 --key awscli-mint-test-bucket-13896-object\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1853,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api list-objects-v2 --bucket awscli-mint-test-bucket-21892 --max-keys 1\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1170,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api copy-object --bucket awscli-mint-test-bucket-14305 --key datafile-1-kB-copy --copy-source awscli-mint-test-bucket-14305/datafile-1-kB\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1022,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api head-object --bucket awscli-mint-test-bucket-17871 --key datafile-1-kB-copy\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1134,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3api head-object --bucket awscli-mint-test-bucket-22144 --key datafile-1-kB\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "pass",
+          "duration_ms": 1149,
+          "message": "",
+          "detail": ""
+        },
+        {
+          "name": "aws --endpoint-url http://127.0.0.1:9878 s3 presign s3://awscli-mint-test-bucket-23281/datafile-1-kB\n",
+          "classname": "awscli",
+          "features": [
+            "awscli"
+          ],
+          "status": "fail",
+          "duration_ms": 768,
+          "message": "",
+          "detail": "Checksum verification failed for downloaded object"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,186 @@
+{
+  "generated_at": "2026-04-01T06:38:24Z",
+  "rate_formula": "compatibility_rate = passed / (passed + failed + errored); skipped and NA are excluded",
+  "suite_order": [
+    "s3_tests",
+    "mint"
+  ],
+  "runs": [
+    {
+      "id": "2026-04-01T06-12-51Z",
+      "status": "completed",
+      "started_at": "2026-04-01T06:12:51Z",
+      "finished_at": "2026-04-01T06:38:24Z",
+      "workflow_run_url": "https://github.com/peterxcli/ozone-s3-compatibility/actions/runs/1",
+      "file": "data/runs/2026-04-01T06-12-51Z.json",
+      "sources": {
+        "ozone": {
+          "repo": "https://github.com/apache/ozone.git",
+          "ref": "master",
+          "commit": "644a018e63a42225307036375c7cf2e7c1178917",
+          "short_commit": "644a018e63a4"
+        },
+        "s3_tests": {
+          "repo": "https://github.com/ceph/s3-tests.git",
+          "ref": "master",
+          "commit": "c29bf103f62df65ed342ca4efb1f6d41a77e81e7",
+          "short_commit": "c29bf103f62d"
+        },
+        "mint": {
+          "repo": "https://github.com/minio/mint.git",
+          "ref": "master",
+          "commit": "12559d50625b722d11fd798ae8ac2fb204e66dd1",
+          "short_commit": "12559d50625b"
+        }
+      },
+      "suites": {
+        "s3_tests": {
+          "label": "s3-tests",
+          "status": "completed",
+          "summary": {
+            "total": 1,
+            "passed": 1,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 0,
+            "eligible": 1,
+            "compatibility_rate": 1.0
+          },
+          "feature_summaries": [
+            {
+              "name": "s3",
+              "label": "s3",
+              "summary": {
+                "total": 1,
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 1,
+                "compatibility_rate": 1.0
+              },
+              "examples": []
+            }
+          ]
+        },
+        "mint": {
+          "label": "mint",
+          "status": "completed",
+          "summary": {
+            "total": 12,
+            "passed": 10,
+            "failed": 2,
+            "errored": 0,
+            "skipped": 0,
+            "eligible": 12,
+            "compatibility_rate": 0.8333
+          },
+          "feature_summaries": [
+            {
+              "name": "awscli",
+              "label": "awscli",
+              "summary": {
+                "total": 11,
+                "passed": 10,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 11,
+                "compatibility_rate": 0.9091
+              },
+              "examples": [
+                {
+                  "name": "aws --endpoint-url http://127.0.0.1:9878 s3 presign s3://awscli-mint-test-bucket-23281/datafile-1-kB\n",
+                  "status": "fail",
+                  "message": ""
+                }
+              ]
+            },
+            {
+              "name": "healthcheck",
+              "label": "healthcheck",
+              "summary": {
+                "total": 1,
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 1,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "testLivenessEndpoint",
+                  "status": "fail",
+                  "message": "GET /minio/health/live returned 403 Forbidden"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "charts": {
+    "overall": {
+      "s3_tests": [
+        {
+          "run_id": "2026-04-01T06-12-51Z",
+          "started_at": "2026-04-01T06:12:51Z",
+          "rate": 1.0,
+          "eligible": 1
+        }
+      ],
+      "mint": [
+        {
+          "run_id": "2026-04-01T06-12-51Z",
+          "started_at": "2026-04-01T06:12:51Z",
+          "rate": 0.8333,
+          "eligible": 12
+        }
+      ]
+    },
+    "features": {
+      "s3_tests": {
+        "s3": [
+          {
+            "run_id": "2026-04-01T06-12-51Z",
+            "started_at": "2026-04-01T06:12:51Z",
+            "rate": 1.0,
+            "eligible": 1,
+            "passed": 1,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 0
+          }
+        ]
+      },
+      "mint": {
+        "awscli": [
+          {
+            "run_id": "2026-04-01T06-12-51Z",
+            "started_at": "2026-04-01T06:12:51Z",
+            "rate": 0.9091,
+            "eligible": 11,
+            "passed": 10,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
+          }
+        ],
+        "healthcheck": [
+          {
+            "run_id": "2026-04-01T06-12-51Z",
+            "started_at": "2026-04-01T06:12:51Z",
+            "rate": 0.0,
+            "eligible": 1,
+            "passed": 0,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
+          }
+        ]
+      }
+    }
+  }
+}
