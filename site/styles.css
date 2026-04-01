@@ -109,6 +109,18 @@ code,
   cursor: pointer;
 }
 
+.repo-link {
+  margin-left: auto;
+  min-width: 2.85rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.repo-link svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: currentColor;
+}
+
 .sticky-dropdown {
   position: relative;
 }
@@ -689,6 +701,11 @@ a:hover {
   .sticky-link,
   .sticky-link-button {
     width: 100%;
+  }
+
+  .repo-link {
+    width: auto;
+    margin-left: auto;
   }
 
   .sticky-dropdown {
