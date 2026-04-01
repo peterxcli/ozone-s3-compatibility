@@ -21,6 +21,34 @@
   <body>
     <div class="backdrop"></div>
     <main class="shell">
+      <nav class="sticky-nav" aria-label="Section navigation">
+        <a class="sticky-link" href="#latest-run-section" data-target="latest-run-section">Latest Run</a>
+        <a class="sticky-link" href="#trend-panel-section" data-target="trend-panel-section">Topline Trends</a>
+        <div class="sticky-dropdown">
+          <button
+            id="archived-run-toggle"
+            class="sticky-link sticky-link-button"
+            type="button"
+            aria-expanded="false"
+            aria-controls="archived-run-menu"
+          >
+            Archived Runs
+          </button>
+          <div id="archived-run-menu" class="sticky-dropdown-panel" role="menu" aria-label="Archived runs">
+            <div id="archived-run-nav" class="sticky-dropdown-list">
+              <span class="sticky-dropdown-empty">Loading archived runs…</span>
+            </div>
+          </div>
+        </div>
+        <a class="sticky-link repo-link" href="https://github.com/peterxcli/ozone-s3-compatibility" aria-label="GitHub repository">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M12 1.5a10.5 10.5 0 0 0-3.32 20.46c.53.1.72-.23.72-.51v-1.79c-2.95.64-3.57-1.25-3.57-1.25-.48-1.21-1.18-1.54-1.18-1.54-.97-.66.07-.65.07-.65 1.07.08 1.64 1.1 1.64 1.1.95 1.63 2.49 1.16 3.1.89.1-.69.37-1.16.67-1.43-2.36-.27-4.84-1.18-4.84-5.25 0-1.16.41-2.1 1.1-2.84-.12-.27-.48-1.36.1-2.84 0 0 .9-.29 2.95 1.08a10.2 10.2 0 0 1 5.38 0c2.04-1.37 2.94-1.08 2.94-1.08.59 1.48.23 2.57.12 2.84.68.74 1.1 1.68 1.1 2.84 0 4.08-2.49 4.98-4.86 5.24.38.32.72.96.72 1.94v2.88c0 .29.19.62.73.51A10.5 10.5 0 0 0 12 1.5Z"
+            />
+          </svg>
+        </a>
+      </nav>
+
       <section class="hero">
         <div class="hero-copy">
           <p class="eyebrow">Nightly GitHub Pages Report</p>
@@ -34,7 +62,7 @@
         <div id="summary-cards" class="summary-cards"></div>
       </section>
 
-      <section class="panel">
+      <section id="latest-run-section" class="panel section-anchor">
         <div class="panel-header">
           <div>
             <p class="eyebrow">Latest Run</p>
@@ -45,7 +73,7 @@
         <div id="latest-run" class="run-details loading">Loading latest run…</div>
       </section>
 
-      <section class="panel">
+      <section id="trend-panel-section" class="panel section-anchor">
         <details id="trend-panel" class="panel-toggle">
           <summary class="panel-header panel-summary">
             <div>
@@ -86,7 +114,7 @@
         </details>
       </section>
 
-      <section class="panel">
+      <section id="history-section" class="panel section-anchor">
         <div class="panel-header">
           <div>
             <p class="eyebrow">History</p>
