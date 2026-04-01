@@ -42,6 +42,8 @@ jobs:
           cp site/index.html .pages-repo/index.html
           cp site/app.js .pages-repo/app.js
           cp site/styles.css .pages-repo/styles.css
+          cp site/social-preview.svg .pages-repo/social-preview.svg
+          cp site/social-preview.png .pages-repo/social-preview.png
           touch .pages-repo/.nojekyll
 
       - name: Commit and push gh-pages
@@ -49,7 +51,7 @@ jobs:
           set -euo pipefail
           git -C .pages-repo config user.name "github-actions[bot]"
           git -C .pages-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C .pages-repo add index.html app.js styles.css .nojekyll
+          git -C .pages-repo add index.html app.js styles.css social-preview.svg social-preview.png .nojekyll
           if git -C .pages-repo diff --cached --quiet; then
             echo "No UI changes to publish"
             exit 0
