@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 from collections import defaultdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from normalize_run import normalize_mint_suite, normalize_s3_suite, overall_status
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,6 +24,165 @@ def parse_args() -> argparse.Namespace:
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def default_sources() -> dict[str, dict[str, str]]:
+    return {
+        "ozone": {
+            "repo": "https://github.com/apache/ozone.git",
+            "ref": "unknown",
+            "commit": "unknown",
+            "short_commit": "unknown",
+        },
+        "s3_tests": {
+            "repo": "https://github.com/ceph/s3-tests.git",
+            "ref": "unknown",
+            "commit": "unknown",
+            "short_commit": "unknown",
+        },
+        "mint": {
+            "repo": "https://github.com/minio/mint.git",
+            "ref": "unknown",
+            "commit": "unknown",
+            "short_commit": "unknown",
+        },
+    }
+
+
+def format_timestamp(epoch_seconds: float) -> str:
+    return datetime.fromtimestamp(epoch_seconds, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def run_id_from_timestamp(timestamp: str) -> str:
+    return timestamp.replace(":", "-")
+
+
+def artifact_file_times(raw_root: Path) -> tuple[str, str]:
+    file_paths = [path for path in raw_root.rglob("*") if path.is_file() and path.name != ".DS_Store"]
+    if not file_paths:
+        now = format_timestamp(datetime.now(UTC).timestamp())
+        return now, now
+
+    started_at = format_timestamp(min(path.stat().st_mtime for path in file_paths))
+    finished_at = format_timestamp(max(path.stat().st_mtime for path in file_paths))
+    return started_at, finished_at
+
+
+def infer_build_exit(raw_root: Path) -> int:
+    build_log = raw_root / "ozone" / "build.log"
+    if not build_log.exists():
+        return 1
+    return 0 if "BUILD SUCCESS" in build_log.read_text(encoding="utf-8", errors="replace") else 1
+
+
+def infer_cluster_exit(raw_root: Path) -> int:
+    start_log = raw_root / "ozone" / "start.log"
+    if not start_log.exists():
+        return 1
+    text = start_log.read_text(encoding="utf-8", errors="replace")
+    if "SCM is out of safe mode." in text or "No OM HA service, no need to wait" in text:
+        return 0
+    return 1
+
+
+def infer_mint_mode(console_log: Path) -> str:
+    if not console_log.exists():
+        return "unknown"
+    match = re.search(r"^MINT_MODE:\s+(.+)$", console_log.read_text(encoding="utf-8", errors="replace"), re.MULTILINE)
+    return match.group(1).strip() if match else "unknown"
+
+
+def infer_mint_targets(console_log: Path) -> str:
+    if not console_log.exists():
+        return ""
+    targets: list[str] = []
+    for line in console_log.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.search(r"^\(\d+/\d+\) Running ([A-Za-z0-9._+-]+) tests \.\.\.", line)
+        if match:
+            targets.append(match.group(1))
+    return " ".join(targets)
+
+
+def recover_run_from_artifact(run_path: Path) -> dict[str, Any]:
+    raw_root = run_path / "raw" if (run_path / "raw").is_dir() else run_path
+    started_at, finished_at = artifact_file_times(raw_root)
+    run_id = run_id_from_timestamp(finished_at)
+
+    console_log = raw_root / "mint" / "console.log"
+    mint_log = raw_root / "mint" / "log" / "log.json"
+    junit_path = raw_root / "s3-tests" / "junit.xml"
+
+    recovered_args = argparse.Namespace(
+        out="",
+        run_id=run_id,
+        started_at=started_at,
+        finished_at=finished_at,
+        workflow_run_url="",
+        build_exit=infer_build_exit(raw_root),
+        cluster_exit=infer_cluster_exit(raw_root),
+        ozone_repo="https://github.com/apache/ozone.git",
+        ozone_ref="unknown",
+        ozone_commit="unknown",
+        s3_tests_repo="https://github.com/ceph/s3-tests.git",
+        s3_tests_ref="unknown",
+        s3_tests_commit="unknown",
+        s3_tests_source=str(run_path / "_missing_s3_tests_source"),
+        s3_tests_junit=str(junit_path),
+        s3_tests_exit=0 if junit_path.exists() else 1,
+        s3_tests_args="s3tests/functional",
+        mint_repo="https://github.com/minio/mint.git",
+        mint_ref="unknown",
+        mint_commit="unknown",
+        mint_log=str(mint_log),
+        mint_exit=0 if mint_log.exists() else 1,
+        mint_mode=infer_mint_mode(console_log),
+        mint_targets=infer_mint_targets(console_log),
+        ozone_datanodes="unknown",
+    )
+
+    suites = {
+        "s3_tests": normalize_s3_suite(recovered_args),
+        "mint": normalize_mint_suite(recovered_args),
+    }
+
+    mint_summary = suites["mint"]["summary"]
+    if mint_summary["failed"] or mint_summary["errored"]:
+        suites["mint"]["exit_code"] = 1
+        recovered_args.mint_exit = 1
+
+    return {
+        "schema_version": 1,
+        "run_id": recovered_args.run_id,
+        "started_at": recovered_args.started_at,
+        "finished_at": recovered_args.finished_at,
+        "status": overall_status(recovered_args.build_exit, recovered_args.cluster_exit, suites),
+        "rate_formula": "compatibility_rate = passed / (passed + failed + errored); skipped and NA are excluded",
+        "workflow_run_url": "",
+        "orchestration": {
+            "build_exit_code": recovered_args.build_exit,
+            "cluster_exit_code": recovered_args.cluster_exit,
+        },
+        "execution": {
+            "s3_tests_args": recovered_args.s3_tests_args,
+            "mint_mode": recovered_args.mint_mode,
+            "mint_targets": [target for target in recovered_args.mint_targets.split() if target],
+            "ozone_datanodes": recovered_args.ozone_datanodes,
+            "recovered_from_raw_artifact": True,
+        },
+        "sources": default_sources(),
+        "suites": suites,
+    }
+
+
+def load_or_recover_run(path: Path) -> dict[str, Any]:
+    if path.is_file():
+        return load_json(path)
+    if path.is_dir():
+        direct_run = path / "run.json"
+        if direct_run.exists():
+            return load_json(direct_run)
+        return recover_run_from_artifact(path)
+    raise FileNotFoundError(path)
 
 
 def summarize_run(run: dict[str, Any], file_name: str) -> dict[str, Any]:
@@ -112,9 +275,9 @@ def main() -> None:
         for run_file in sorted(existing_runs_dir.glob("*.json")):
             shutil.copy2(run_file, output_dir / "data" / "runs" / run_file.name)
 
-    new_run = load_json(new_run_path)
+    new_run = load_or_recover_run(new_run_path)
     current_run_file = output_dir / "data" / "runs" / f"{new_run['run_id']}.json"
-    shutil.copy2(new_run_path, current_run_file)
+    current_run_file.write_text(json.dumps(new_run, indent=2, sort_keys=False) + "\n", encoding="utf-8")
 
     runs = [load_json(path) for path in sorted((output_dir / "data" / "runs").glob("*.json"))]
     index_payload = build_index(runs)

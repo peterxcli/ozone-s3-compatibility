@@ -295,7 +295,10 @@ def normalize_mint_suite(args: argparse.Namespace) -> dict[str, Any]:
         for line in log_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            entry = json.loads(line)
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             cases.append(
                 {
                     "name": entry.get("function", ""),

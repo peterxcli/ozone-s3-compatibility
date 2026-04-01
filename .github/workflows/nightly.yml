@@ -123,7 +123,7 @@ jobs:
           bash scripts/run-nightly.sh
 
       - name: Build Pages preview
-        if: ${{ always() && hashFiles('out/run/run.json') != '' }}
+        if: ${{ always() && hashFiles('out/run/**') != '' }}
         run: |
           set -euo pipefail
           existing_runs=""
@@ -132,7 +132,7 @@ jobs:
           fi
           python3 scripts/build_pages.py \
             --output-dir out/pages \
-            --new-run out/run/run.json \
+            --new-run out/run \
             ${existing_runs}
 
       - name: Explain publish gate
@@ -157,6 +157,7 @@ jobs:
           echo "  inputs.publish_pages=${DEBUG_INPUT_PUBLISH_PAGES}"
           echo "  env.PUBLISH_PAGES=${PUBLISH_PAGES}"
           echo "  out/run/run.json=${run_json_exists}"
+          echo "  out/run directory=$( [ -d out/run ] && echo true || echo false )"
           echo "  out/pages/index.html=${pages_index_exists}"
 
           if [ "${PUBLISH_PAGES}" != "true" ]; then
