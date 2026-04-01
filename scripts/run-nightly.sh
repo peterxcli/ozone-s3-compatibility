@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -u -o pipefail
+set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$ROOT_DIR/out/run}"
@@ -384,6 +384,7 @@ if [[ -n "${GITHUB_SERVER_URL:-}" && -n "${GITHUB_REPOSITORY:-}" && -n "${GITHUB
   RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 fi
 
+log "Normalizing run outputs"
 python3 "${ROOT_DIR}/scripts/normalize_run.py" \
   --out "${RUN_JSON}" \
   --run-id "${RUN_ID}" \
