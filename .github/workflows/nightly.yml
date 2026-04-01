@@ -84,7 +84,9 @@ jobs:
       - name: Install workflow dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq rsync
+          sudo apt-get install -y jq maven rsync
+          mvn -version | head -n 2
+          docker compose version || docker-compose --version
 
       - name: Prepare gh-pages checkout
         if: ${{ github.event_name == 'schedule' || inputs.publish_pages == true }}
