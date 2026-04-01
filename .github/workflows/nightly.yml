@@ -1,0 +1,152 @@
+name: ozone-s3-compatibility
+
+on:
+  schedule:
+    - cron: "15 2 * * *"
+  workflow_dispatch:
+    inputs:
+      publish_pages:
+        description: "Push the generated report to gh-pages"
+        required: false
+        default: false
+        type: boolean
+      ozone_ref:
+        description: "Ozone ref to test"
+        required: false
+        default: "master"
+        type: string
+      s3_tests_args:
+        description: "pytest selection for s3-tests"
+        required: false
+        default: "s3tests/functional"
+        type: string
+      mint_mode:
+        description: "Mint mode"
+        required: false
+        default: "core"
+        type: choice
+        options:
+          - core
+          - full
+      mint_targets:
+        description: "Optional Mint SDK targets, space separated"
+        required: false
+        default: ""
+        type: string
+      ozone_datanodes:
+        description: "Number of Ozone datanodes to start"
+        required: false
+        default: "1"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ozone-s3-compatibility-pages
+  cancel-in-progress: false
+
+env:
+  OZONE_REPO: https://github.com/apache/ozone.git
+  OZONE_REF: ${{ inputs.ozone_ref || 'master' }}
+  S3_TESTS_REPO: https://github.com/ceph/s3-tests.git
+  S3_TESTS_REF: master
+  S3_TESTS_ARGS: ${{ inputs.s3_tests_args || 's3tests/functional' }}
+  MINT_REPO: https://github.com/minio/mint.git
+  MINT_REF: master
+  MINT_MODE: ${{ inputs.mint_mode || 'core' }}
+  MINT_TARGETS: ${{ inputs.mint_targets || '' }}
+  OZONE_DATANODES: ${{ inputs.ozone_datanodes || '1' }}
+  OZONE_BUILD_ARGS: -Pdist -Dmaven.javadoc.skip=true -Drocks_tools_native
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install workflow dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq rsync
+
+      - name: Prepare gh-pages checkout
+        if: ${{ github.event_name == 'schedule' || inputs.publish_pages == true }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages >/dev/null 2>&1; then
+            git clone --depth 1 --branch gh-pages "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" .pages-repo
+          else
+            git init .pages-repo
+            git -C .pages-repo checkout -b gh-pages
+            git -C .pages-repo remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+
+      - name: Run nightly compatibility job
+        id: nightly
+        run: |
+          set -euo pipefail
+          export OUTPUT_ROOT="$PWD/out/run"
+          export RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          echo "run_id=${RUN_ID}" >> "${GITHUB_OUTPUT}"
+          bash scripts/run-nightly.sh
+
+      - name: Build Pages preview
+        if: ${{ always() && hashFiles('out/run/run.json') != '' }}
+        run: |
+          set -euo pipefail
+          existing_runs=""
+          if [ -d ".pages-repo/data/runs" ]; then
+            existing_runs="--existing-runs-dir .pages-repo/data/runs"
+          fi
+          python3 scripts/build_pages.py \
+            --output-dir out/pages \
+            --new-run out/run/run.json \
+            ${existing_runs}
+
+      - name: Upload report artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-run-${{ steps.nightly.outputs.run_id || github.run_id }}
+          path: |
+            out/run
+            out/pages
+          if-no-files-found: warn
+
+      - name: Publish gh-pages
+        if: ${{ always() && hashFiles('out/pages/index.html') != '' && (github.event_name == 'schedule' || inputs.publish_pages == true) }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          rsync -a --delete --exclude '.git/' out/pages/ .pages-repo/
+          touch .pages-repo/.nojekyll
+          git -C .pages-repo config user.name "github-actions[bot]"
+          git -C .pages-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .pages-repo add .
+          if git -C .pages-repo diff --cached --quiet; then
+            echo "No Pages changes to publish"
+            exit 0
+          fi
+          git -C .pages-repo commit -m "Nightly compatibility report for ${{ steps.nightly.outputs.run_id || github.run_id }}"
+          git -C .pages-repo push --force origin gh-pages

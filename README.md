@@ -1,0 +1,91 @@
+# Ozone S3 Compatibility Nightly
+
+This repo builds Apache Ozone from source on GitHub Actions, starts the packaged compose cluster, runs `ceph/s3-tests` and `minio/mint`, and publishes a historical compatibility report to GitHub Pages.
+
+The report keeps:
+
+- Daily suite-level compatibility trends for `s3-tests` and `mint`
+- Feature-level trend charts at the top of the page
+- The latest run expanded as a full report
+- Older runs collapsed behind expansion controls so you can inspect a specific day
+
+## Flow
+
+Each nightly run does this:
+
+1. Clone Ozone and reset to the requested ref, default `master`
+2. Build the Ozone dist package
+3. Start the packaged compose cluster from the built artifact
+4. Clone and run `s3-tests`
+5. Clone and build `mint`, then run it against the same cluster
+6. Normalize both outputs into one run JSON
+7. Merge the new run into historical data and rebuild the static site
+8. Force-push the result to `gh-pages`
+
+## Repo Layout
+
+- `.github/workflows/nightly.yml`: scheduled workflow and manual/`act` entrypoint
+- [`scripts/run-nightly.sh`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/run-nightly.sh): orchestration for clone/build/start/run
+- [`scripts/normalize_run.py`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/normalize_run.py): converts raw outputs into a report-friendly JSON model
+- [`scripts/build_pages.py`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/build_pages.py): rebuilds the static Pages site from historical run JSON files
+- [`site/index.html`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/index.html), [`site/app.js`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/app.js), [`site/styles.css`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/styles.css): GitHub Pages frontend
+
+## GitHub Setup
+
+1. Create the repo.
+2. Push `main`.
+3. In GitHub Pages settings, set the source to the `gh-pages` branch root.
+4. Leave the workflow permissions at the repository default, or allow `contents: write`.
+
+The workflow handles branch creation itself if `gh-pages` does not exist yet.
+
+## Local Run
+
+You can run the orchestration script directly. Override the repo URLs when you want to use local clones.
+
+```bash
+export OZONE_REPO=/Users/lixucheng/Documents/oss/apache/ozone
+export S3_TESTS_REPO=/tmp/ozone-compat-src/s3-tests
+export MINT_REPO=/tmp/ozone-compat-src/mint
+export S3_TESTS_ARGS='s3tests/functional/test_s3.py::test_bucket_list_empty'
+export MINT_TARGETS='healthcheck awscli'
+export OUTPUT_ROOT="$PWD/out/run"
+
+bash scripts/run-nightly.sh
+python3 scripts/build_pages.py --output-dir out/pages --new-run out/run/run.json
+```
+
+Open `out/pages/index.html` in a local web server after that.
+
+## Using `act`
+
+The workflow exposes `workflow_dispatch` inputs specifically so `nektos/act` can run a smaller smoke job locally.
+
+Recommended first pass:
+
+```bash
+act workflow_dispatch \
+  -W .github/workflows/nightly.yml \
+  -e .github/act/nightly-event.json \
+  --secret GITHUB_TOKEN="$(gh auth token)"
+```
+
+Notes:
+
+- `.actrc` is included with a full Ubuntu image mapping because this workflow needs Docker, Java, and Python.
+- The full nightly path is heavy. Start with a narrow `s3-tests` selector and a small `mint_targets` list.
+- Publishing is disabled in the sample `act` event file. Turn on `publish_pages` only when you actually want to push `gh-pages`.
+
+## Compatibility Rate
+
+The site uses:
+
+`compatibility_rate = passed / (passed + failed + errored)`
+
+Skipped and `NA` results are tracked separately and excluded from the rate.
+
+## Current Tradeoffs
+
+- `s3-tests` history stores non-passing case detail instead of every passing case. That keeps the archive small enough for long-term Pages history while still keeping feature summaries for every run.
+- `mint` stores full case detail because its output is compact.
+- The default workflow uses one datanode to keep GitHub-hosted runners practical. If you want multi-node coverage, raise `ozone_datanodes` in `workflow_dispatch` or the workflow env.

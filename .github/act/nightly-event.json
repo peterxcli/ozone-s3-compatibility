@@ -1,0 +1,11 @@
+{
+  "inputs": {
+    "publish_pages": false,
+    "ozone_ref": "master",
+    "s3_tests_args": "s3tests/functional/test_s3.py::test_bucket_list_empty",
+    "mint_mode": "core",
+    "mint_targets": "healthcheck awscli",
+    "ozone_datanodes": "1"
+  }
+}
+

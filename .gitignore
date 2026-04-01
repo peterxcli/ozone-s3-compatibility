@@ -1,0 +1,7 @@
+.pages-repo/
+.work/
+.venv/
+__pycache__/
+*.pyc
+out/
+
