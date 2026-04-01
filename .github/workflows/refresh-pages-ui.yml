@@ -1,0 +1,60 @@
+name: refresh-pages-ui
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ozone-s3-compatibility-pages-ui
+  cancel-in-progress: false
+
+jobs:
+  refresh-pages-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Prepare gh-pages checkout
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          remote_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          if git ls-remote --exit-code --heads "${remote_url}" gh-pages >/dev/null 2>&1; then
+            git clone --depth 1 --branch gh-pages "${remote_url}" .pages-repo
+          else
+            git init .pages-repo
+            git -C .pages-repo checkout -b gh-pages
+            git -C .pages-repo remote add origin "${remote_url}"
+          fi
+
+      - name: Refresh published UI assets
+        run: |
+          set -euo pipefail
+          cp site/index.html .pages-repo/index.html
+          cp site/app.js .pages-repo/app.js
+          cp site/styles.css .pages-repo/styles.css
+          touch .pages-repo/.nojekyll
+
+      - name: Commit and push gh-pages
+        run: |
+          set -euo pipefail
+          git -C .pages-repo config user.name "github-actions[bot]"
+          git -C .pages-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .pages-repo add index.html app.js styles.css .nojekyll
+          if git -C .pages-repo diff --cached --quiet; then
+            echo "No UI changes to publish"
+            exit 0
+          fi
+
+          short_sha="$(printf '%s' "${GITHUB_SHA}" | cut -c1-7)"
+          git -C .pages-repo commit -m "Refresh Pages UI from ${short_sha}"
+          git -C .pages-repo push origin gh-pages
