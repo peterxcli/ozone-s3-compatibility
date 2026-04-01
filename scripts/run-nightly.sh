@@ -349,11 +349,15 @@ python3 "${ROOT_DIR}/scripts/normalize_run.py" \
   --s3-tests-source "${WORK_DIR}/s3-tests" \
   --s3-tests-junit "${RAW_DIR}/s3-tests/junit.xml" \
   --s3-tests-exit "${S3_TESTS_EXIT}" \
+  --s3-tests-args "${S3_TESTS_ARGS}" \
   --mint-repo "${MINT_REPO}" \
   --mint-ref "${MINT_REF}" \
   --mint-commit "${MINT_COMMIT}" \
   --mint-log "${RAW_DIR}/mint/log/log.json" \
-  --mint-exit "${MINT_EXIT}"
+  --mint-exit "${MINT_EXIT}" \
+  --mint-mode "${MINT_MODE}" \
+  --mint-targets "${MINT_TARGETS}" \
+  --ozone-datanodes "${OZONE_DATANODES}"
 
 if [[ ${BUILD_EXIT} -ne 0 || ${CLUSTER_EXIT} -ne 0 ]]; then
   log "Nightly orchestration finished with infrastructure errors"

@@ -135,6 +135,22 @@ code,
   font-size: 0.82rem;
 }
 
+.scope-pill.full {
+  color: var(--good);
+  border-color: rgba(15, 157, 113, 0.24);
+  background: rgba(15, 157, 113, 0.08);
+}
+
+.scope-pill.subset {
+  color: var(--warn);
+  border-color: rgba(216, 137, 16, 0.24);
+  background: rgba(216, 137, 16, 0.08);
+}
+
+.scope-pill.unknown {
+  color: var(--muted);
+}
+
 .summary-cards {
   display: grid;
   gap: 1rem;
@@ -367,6 +383,9 @@ th {
   border-radius: var(--radius-md);
   background: var(--surface-strong);
   overflow: hidden;
+  padding: 1rem 1.1rem 1.1rem;
+  display: grid;
+  gap: 1rem;
 }
 
 .history-item summary {
@@ -395,13 +414,21 @@ th {
   align-items: center;
 }
 
+.history-summary-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  align-items: center;
+}
+
 .history-summary-head h3 {
   margin: 0;
   font-size: 1.1rem;
 }
 
 .history-body {
-  padding: 1rem 1.1rem 1.1rem;
+  padding: 0;
 }
 
 .suite-summary-strip {
@@ -538,6 +565,7 @@ a:hover {
   }
 
   .history-summary-head,
+  .history-summary-status,
   .panel-header,
   .chart-head,
   .suite-head,

@@ -44,11 +44,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--s3-tests-source", required=True)
     parser.add_argument("--s3-tests-junit", required=True)
     parser.add_argument("--s3-tests-exit", type=int, default=0)
+    parser.add_argument("--s3-tests-args", default="s3tests/functional")
     parser.add_argument("--mint-repo", required=True)
     parser.add_argument("--mint-ref", required=True)
     parser.add_argument("--mint-commit", required=True)
     parser.add_argument("--mint-log", required=True)
     parser.add_argument("--mint-exit", type=int, default=0)
+    parser.add_argument("--mint-mode", default="core")
+    parser.add_argument("--mint-targets", default="")
+    parser.add_argument("--ozone-datanodes", default="1")
     return parser.parse_args()
 
 
@@ -351,6 +355,12 @@ def main() -> None:
         "orchestration": {
             "build_exit_code": args.build_exit,
             "cluster_exit_code": args.cluster_exit,
+        },
+        "execution": {
+            "s3_tests_args": args.s3_tests_args,
+            "mint_mode": args.mint_mode,
+            "mint_targets": [target for target in args.mint_targets.split() if target],
+            "ozone_datanodes": args.ozone_datanodes,
         },
         "sources": {
             "ozone": {

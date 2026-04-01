@@ -6,8 +6,9 @@ The report keeps:
 
 - Daily suite-level compatibility trends for `s3-tests` and `mint`
 - Feature-level trend charts at the top of the page
-- The latest run expanded as a full report
-- Older runs collapsed behind expansion controls so you can inspect a specific day
+- The latest run shown as a full report
+- Every archived run shown inline with its suite details
+- Run-scope labels so smoke or subset publishes are distinguishable from full nightlies
 
 ## Flow
 

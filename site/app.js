@@ -1,4 +1,7 @@
 const COLORS = ["#0d7fab", "#ff8a3d", "#0f9d71", "#7a62ff", "#d2493a", "#0097a7", "#9c6b00", "#d81b60"];
+const DEFAULT_S3_TESTS_ARGS = "s3tests/functional";
+const DEFAULT_MINT_MODE = "core";
+const DEFAULT_OZONE_DATANODES = "1";
 
 let overallChart;
 let featureChart;
@@ -34,7 +37,12 @@ function formatDate(value) {
 }
 
 function text(value) {
-  return value ?? "";
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function suiteLabel(key) {
@@ -43,6 +51,75 @@ function suiteLabel(key) {
 
 function statusClass(status) {
   return String(status || "").replace(/[^a-z_]+/g, "_");
+}
+
+function runId(run) {
+  return run.run_id || run.id || "";
+}
+
+function executionForRun(run) {
+  if (!run.execution || Object.keys(run.execution).length === 0) {
+    return null;
+  }
+
+  const mintTargets = Array.isArray(run.execution.mint_targets)
+    ? run.execution.mint_targets.filter(Boolean)
+    : String(run.execution.mint_targets || "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+
+  return {
+    s3_tests_args: run.execution.s3_tests_args || DEFAULT_S3_TESTS_ARGS,
+    mint_mode: run.execution.mint_mode || DEFAULT_MINT_MODE,
+    mint_targets: mintTargets,
+    ozone_datanodes: String(run.execution.ozone_datanodes || DEFAULT_OZONE_DATANODES),
+  };
+}
+
+function runScope(run) {
+  const execution = executionForRun(run);
+  if (!execution) {
+    return { kind: "unknown", label: "Run inputs unavailable" };
+  }
+
+  if (execution.s3_tests_args !== DEFAULT_S3_TESTS_ARGS || execution.mint_targets.length > 0) {
+    return { kind: "subset", label: "Subset run" };
+  }
+
+  return { kind: "full", label: "Full nightly" };
+}
+
+function renderScopeChip(run) {
+  const scope = runScope(run);
+  return `<span class="pill scope-pill ${scope.kind}">${scope.label}</span>`;
+}
+
+function renderExecutionChips(run) {
+  const execution = executionForRun(run);
+  if (!execution) {
+    return `<div class="run-meta">${renderScopeChip(run)}</div>`;
+  }
+
+  const chips = [renderScopeChip(run)];
+
+  if (execution.s3_tests_args !== DEFAULT_S3_TESTS_ARGS) {
+    chips.push(`<span class="meta-chip mono">s3-tests selector: ${text(execution.s3_tests_args)}</span>`);
+  }
+
+  if (execution.mint_targets.length > 0) {
+    chips.push(`<span class="meta-chip mono">mint targets: ${text(execution.mint_targets.join(" "))}</span>`);
+  }
+
+  if (execution.mint_mode !== DEFAULT_MINT_MODE) {
+    chips.push(`<span class="meta-chip">Mint mode: ${text(execution.mint_mode)}</span>`);
+  }
+
+  if (execution.ozone_datanodes !== DEFAULT_OZONE_DATANODES) {
+    chips.push(`<span class="meta-chip">${text(execution.ozone_datanodes)} datanodes</span>`);
+  }
+
+  return `<div class="run-meta">${chips.join("")}</div>`;
 }
 
 function deltaForSuite(runs, suiteKey) {
@@ -65,6 +142,7 @@ function renderHero(index) {
   heroMeta.innerHTML = `
     <span class="meta-chip mono">${formatDate(latest.started_at)}</span>
     <span class="meta-chip mono">Ozone ${latest.sources.ozone.short_commit}</span>
+    ${renderScopeChip(latest)}
     <span class="meta-chip">${latest.status.replace(/_/g, " ")}</span>
     ${latest.workflow_run_url ? `<a class="meta-chip" href="${latest.workflow_run_url}">GitHub Actions run</a>` : ""}
   `;
@@ -341,7 +419,7 @@ function renderFeatureTable(featureSummaries) {
             .map(
               (feature) => `
                 <tr>
-                  <td>${feature.label}</td>
+                  <td>${text(feature.label)}</td>
                   <td>${formatPercent(feature.summary.compatibility_rate)}</td>
                   <td>${feature.summary.eligible}</td>
                   <td>${feature.summary.passed}</td>
@@ -388,7 +466,7 @@ function renderCases(suite) {
                     <h5>${text(entry.name)}</h5>
                     <div class="feature-tags">
                       ${(entry.features || [])
-                        .map((feature) => `<span class="feature-tag">${feature.replace(/_/g, " ")}</span>`)
+                        .map((feature) => `<span class="feature-tag">${text(feature.replace(/_/g, " "))}</span>`)
                         .join("")}
                     </div>
                   </div>
@@ -441,6 +519,7 @@ function renderRunDetails(run) {
         <span class="meta-chip mono">mint ${run.sources.mint.short_commit}</span>
         ${actionLink ? `<span class="meta-chip">${actionLink}</span>` : ""}
       </div>
+      ${renderExecutionChips(run)}
       <div class="suite-grid">${suiteMarkup}</div>
     </div>
   `;
@@ -462,63 +541,53 @@ async function renderLatest(index) {
   latestContainer.innerHTML = renderRunDetails(fullRun);
 }
 
-function renderHistory(index) {
-  const list = document.getElementById("history-list");
-  list.classList.remove("loading");
-  list.innerHTML = index.runs
-    .map((run) => {
-      const suiteStrips = Object.entries(run.suites)
-        .map(
-          ([suiteKey, suite]) => `
-            <div class="suite-summary-chip">
-              <h4>${suiteLabel(suiteKey)}</h4>
-              <div class="metric-row">
-                <span class="status-pill ${statusClass(suite.status)}">${suite.status.replace(/_/g, " ")}</span>
-                <span class="pill">${formatPercent(suite.summary.compatibility_rate)}</span>
-                <span class="pill">${suite.summary.eligible} eligible</span>
-              </div>
-            </div>
-          `
-        )
-        .join("");
-
-      return `
-        <details class="history-item" data-run-file="${run.file}">
-          <summary>
-            <div class="history-summary">
-              <div class="history-summary-head">
-                <div>
-                  <p class="eyebrow">Run ${run.id}</p>
-                  <h3>${formatDate(run.started_at)}</h3>
-                </div>
-                <span class="status-pill ${statusClass(run.status)}">${run.status.replace(/_/g, " ")}</span>
-              </div>
-              <div class="suite-summary-strip">${suiteStrips}</div>
-            </div>
-          </summary>
-          <div class="history-body">
-            <div class="loader">Loading run details…</div>
+function renderHistoryItem(run) {
+  const suiteStrips = Object.entries(run.suites || {})
+    .map(
+      ([suiteKey, suite]) => `
+        <div class="suite-summary-chip">
+          <h4>${suiteLabel(suiteKey)}</h4>
+          <div class="metric-row">
+            <span class="status-pill ${statusClass(suite.status)}">${suite.status.replace(/_/g, " ")}</span>
+            <span class="pill">${formatPercent(suite.summary.compatibility_rate)}</span>
+            <span class="pill">${suite.summary.eligible} eligible</span>
           </div>
-        </details>
-      `;
-    })
+        </div>
+      `
+    )
     .join("");
 
-  list.querySelectorAll(".history-item").forEach((details) => {
-    details.addEventListener("toggle", async () => {
-      if (!details.open || details.dataset.loaded === "true") {
-        return;
-      }
-      const body = details.querySelector(".history-body");
-      try {
-        const run = await fetchRun(details.dataset.runFile);
-        body.innerHTML = renderRunDetails(run);
-        details.dataset.loaded = "true";
-      } catch (error) {
-        body.innerHTML = `<div class="loader">${error.message}</div>`;
-      }
-    });
-  });
+  return `
+    <article class="history-item">
+      <div class="history-summary">
+        <div class="history-summary-head">
+          <div>
+            <p class="eyebrow">Run ${text(runId(run))}</p>
+            <h3>${formatDate(run.started_at)}</h3>
+          </div>
+          <div class="history-summary-status">
+            ${renderScopeChip(run)}
+            <span class="status-pill ${statusClass(run.status)}">${run.status.replace(/_/g, " ")}</span>
+          </div>
+        </div>
+        <div class="suite-summary-strip">${suiteStrips}</div>
+      </div>
+      <div class="history-body">${renderRunDetails(run)}</div>
+    </article>
+  `;
+}
+
+async function renderHistory(index) {
+  const list = document.getElementById("history-list");
+  list.classList.remove("loading");
+  const archivedRuns = index.runs.slice(1);
+  if (!archivedRuns.length) {
+    list.innerHTML = `<div class="empty-state">No archived runs are available yet.</div>`;
+    return;
+  }
+
+  const fullRuns = await Promise.all(archivedRuns.map((run) => fetchRun(run.file)));
+  list.innerHTML = fullRuns.map((run) => renderHistoryItem(run)).join("");
 }
 
 async function main() {
@@ -537,7 +606,7 @@ async function main() {
   renderHero(index);
   setupTrendPanel(index);
   await renderLatest(index);
-  renderHistory(index);
+  await renderHistory(index);
 }
 
 main().catch((error) => {

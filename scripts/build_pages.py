@@ -37,6 +37,7 @@ def summarize_run(run: dict[str, Any], file_name: str) -> dict[str, Any]:
         "started_at": run["started_at"],
         "finished_at": run["finished_at"],
         "workflow_run_url": run.get("workflow_run_url", ""),
+        "execution": run.get("execution"),
         "file": f"data/runs/{file_name}",
         "sources": run["sources"],
         "suites": suites,
