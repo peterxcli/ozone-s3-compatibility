@@ -17,6 +17,7 @@ OZONE_DATANODES="${OZONE_DATANODES:-1}"
 S3_TESTS_REPO="${S3_TESTS_REPO:-https://github.com/ceph/s3-tests.git}"
 S3_TESTS_REF="${S3_TESTS_REF:-master}"
 S3_TESTS_ARGS="${S3_TESTS_ARGS:-s3tests/functional}"
+S3_TESTS_MARK_EXPR="${S3_TESTS_MARK_EXPR:-not fails_on_aws}"
 
 MINT_REPO="${MINT_REPO:-https://github.com/minio/mint.git}"
 MINT_REF="${MINT_REF:-master}"

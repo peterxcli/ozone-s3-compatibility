@@ -1,6 +1,6 @@
 # Ozone S3 Compatibility Nightly
 
-This repo builds Apache Ozone from source on GitHub Actions, starts the packaged compose cluster, runs `ceph/s3-tests` and `minio/mint`, and publishes a historical compatibility report to GitHub Pages.
+This repo builds Apache Ozone from source on GitHub Actions, starts the packaged compose cluster, runs `ceph/s3-tests` and `minio/mint`, and publishes a historical compatibility report to GitHub Pages. The default `s3-tests` run excludes cases marked `fails_on_aws`, because the target is AWS S3 compatibility rather than RGW-specific behavior.
 
 The report keeps:
 
@@ -66,6 +66,8 @@ python3 scripts/build_pages.py --output-dir out/pages --new-run out/run/run.json
 ```
 
 Open `out/pages/index.html` in a local web server after that.
+
+Set `S3_TESTS_MARK_EXPR=''` if you need to disable the default AWS marker filter for a one-off run.
 
 ## Using `act`
 
