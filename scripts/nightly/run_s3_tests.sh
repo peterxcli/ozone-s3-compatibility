@@ -79,9 +79,17 @@ EOF
 if [[ ${suite_exit} -eq 0 ]]; then
   export S3TEST_CONF="${RAW_DIR}/s3-tests/s3tests.conf"
   pushd "${WORK_DIR}/s3-tests" >/dev/null
-  nightly_log "Running s3-tests selection: ${S3_TESTS_ARGS}"
+  pytest_args=("--junitxml" "${RAW_DIR}/s3-tests/junit.xml")
+  if [[ -n "${S3_TESTS_MARK_EXPR:-}" ]]; then
+    pytest_args+=("-m" "${S3_TESTS_MARK_EXPR}")
+    nightly_log "Running s3-tests selection: ${S3_TESTS_ARGS} (pytest -m ${S3_TESTS_MARK_EXPR})"
+  else
+    nightly_log "Running s3-tests selection: ${S3_TESTS_ARGS}"
+  fi
+  read -r -a selection_args <<< "${S3_TESTS_ARGS}"
+  pytest_args+=("${selection_args[@]}")
   set +e
-  python -m pytest --junitxml "${RAW_DIR}/s3-tests/junit.xml" ${S3_TESTS_ARGS} \
+  python -m pytest "${pytest_args[@]}" \
     2>&1 | tee "${RAW_DIR}/s3-tests/pytest.log"
   suite_exit=${PIPESTATUS[0]}
   set -e
