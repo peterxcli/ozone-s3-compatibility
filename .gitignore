@@ -4,4 +4,5 @@
 __pycache__/
 *.pyc
 out/
-
+site/dist/
+site/node_modules/

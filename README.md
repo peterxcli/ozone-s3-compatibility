@@ -28,11 +28,12 @@ Each nightly run does this:
 ## Repo Layout
 
 - `.github/workflows/nightly.yml`: scheduled workflow and manual/`act` entrypoint
-- `.github/workflows/refresh-pages-ui.yml`: manual workflow that updates only `index.html`, `app.js`, `styles.css`, and `.nojekyll` on `gh-pages`
+- `.github/workflows/refresh-pages-ui.yml`: manual workflow that builds the Vue frontend and updates only the published UI assets on `gh-pages`
 - [`scripts/run-nightly.sh`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/run-nightly.sh): orchestration for clone/build/start/run
 - [`scripts/normalize_run.py`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/normalize_run.py): converts raw outputs into a report-friendly JSON model
 - [`scripts/build_pages.py`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/build_pages.py): rebuilds the static Pages site from historical run JSON files
-- [`site/index.html`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/index.html), [`site/app.js`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/app.js), [`site/styles.css`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/styles.css): GitHub Pages frontend
+- [`site/src/App.vue`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/src/App.vue) and [`site/src/components`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/src/components): Vue 3 frontend source
+- [`site/vite.config.js`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/vite.config.js) and [`site/package.json`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/site/package.json): frontend build config
 
 ## GitHub Setup
 
@@ -42,7 +43,7 @@ Each nightly run does this:
 4. Leave the workflow permissions at the repository default, or allow `contents: write`.
 
 The workflow handles branch creation itself if `gh-pages` does not exist yet.
-If you only want to publish frontend changes from `site/` without rebuilding run history, trigger `refresh-pages-ui`. It updates the published UI files on `gh-pages` and leaves `data/` untouched.
+If you only want to publish frontend changes without rebuilding run history, trigger `refresh-pages-ui`. It builds the Vue app, updates the published UI files on `gh-pages`, and leaves `data/` untouched.
 
 ## Publish Paths
 
@@ -62,6 +63,8 @@ export MINT_TARGETS='healthcheck awscli'
 export OUTPUT_ROOT="$PWD/out/run"
 
 bash scripts/run-nightly.sh
+npm --prefix site ci
+npm --prefix site run build
 python3 scripts/build_pages.py --output-dir out/pages --new-run out/run/run.json
 ```
 

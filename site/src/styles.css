@@ -573,15 +573,10 @@ th {
 .history-item summary {
   list-style: none;
   cursor: pointer;
-  padding: 1rem 1.1rem;
 }
 
 .history-item summary::-webkit-details-marker {
   display: none;
-}
-
-.history-item[open] summary {
-  border-bottom: 1px solid var(--line);
 }
 
 .history-summary {
@@ -842,10 +837,7 @@ a:hover {
     flex-direction: column;
   }
 
-  .panel-summary-side {
-    justify-content: flex-start;
-  }
-
+  .panel-summary-side,
   .suite-summary-side {
     justify-content: flex-start;
   }

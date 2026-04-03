@@ -21,6 +21,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Build Pages frontend
+        run: |
+          set -euo pipefail
+          npm --prefix site ci
+          npm --prefix site run build
+
       - name: Prepare gh-pages checkout
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,7 +52,7 @@ jobs:
       - name: Refresh published UI assets
         run: |
           set -euo pipefail
-          source_dir="site"
+          source_dir="site/dist"
           if [ -d .pages-repo/data/runs ] && find .pages-repo/data/runs -maxdepth 1 -name '*.json' | grep -q .; then
             latest_run="$(find .pages-repo/data/runs -maxdepth 1 -name '*.json' | sort | tail -n 1)"
             python3 scripts/build_pages.py \

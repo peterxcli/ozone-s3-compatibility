@@ -88,6 +88,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
       - name: Install workflow dependencies
         run: |
           missing=()
@@ -100,6 +107,12 @@ jobs:
           fi
           mvn -version | head -n 2
           docker compose version || docker-compose --version
+
+      - name: Build Pages frontend
+        run: |
+          set -euo pipefail
+          npm --prefix site ci
+          npm --prefix site run build
 
       - name: Initialize nightly run context
         id: init

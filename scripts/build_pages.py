@@ -464,10 +464,19 @@ def copy_tree(source: Path, target: Path) -> None:
         shutil.copy2(file_path, destination)
 
 
+def built_site_dir() -> Path:
+    site_dist = Path(__file__).resolve().parent.parent / "site" / "dist"
+    if site_dist.is_dir():
+        return site_dist
+    raise FileNotFoundError(
+        f"Missing built frontend at {site_dist}. Run `npm --prefix site ci && npm --prefix site run build` first."
+    )
+
+
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
-    site_dir = Path(__file__).resolve().parent.parent / "site"
+    site_dir = built_site_dir()
     new_run_path = Path(args.new_run)
     existing_runs_dir = Path(args.existing_runs_dir) if args.existing_runs_dir else None
 
