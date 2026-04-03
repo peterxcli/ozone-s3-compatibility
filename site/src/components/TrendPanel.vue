@@ -120,6 +120,8 @@ function renderOverallChart(): void {
       spanGaps: true,
       tension: 0.25,
       pointRadius: 3,
+      pointHitRadius: 14,
+      pointHoverRadius: 6,
       borderWidth: 2,
     }));
 
@@ -129,6 +131,14 @@ function renderOverallChart(): void {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
+      hover: {
+        mode: "index",
+        intersect: false,
+      },
       scales: {
         x: {
           grid: { color: "rgba(18, 38, 63, 0.06)" },
@@ -185,6 +195,8 @@ function renderFeatureChart(): void {
     spanGaps: true,
     tension: 0.2,
     pointRadius: 2.5,
+    pointHitRadius: 14,
+    pointHoverRadius: 6,
     borderWidth: 2,
   }));
 
@@ -194,6 +206,14 @@ function renderFeatureChart(): void {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
+      hover: {
+        mode: "index",
+        intersect: false,
+      },
       scales: {
         x: {
           grid: { color: "rgba(18, 38, 63, 0.06)" },
