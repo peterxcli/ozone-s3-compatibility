@@ -179,11 +179,11 @@ function handleToggle(event: Event): void {
               <span class="feature-title">{{ panel.label }}</span>
               <span class="subtle feature-stored-label">{{ storedDetailLabel(panel) }}</span>
             </span>
-            <span class="feature-cell">{{ formatPercent(panel.summary.compatibility_rate) }}</span>
-            <span class="feature-cell">{{ panel.summary.eligible }}</span>
-            <span class="feature-cell">{{ panel.summary.passed }}</span>
-            <span class="feature-cell">{{ panel.summary.failed + panel.summary.errored }}</span>
-            <span class="feature-cell">{{ panel.summary.skipped }}</span>
+            <span class="feature-cell" data-label="Rate">{{ formatPercent(panel.summary.compatibility_rate) }}</span>
+            <span class="feature-cell" data-label="Eligible">{{ panel.summary.eligible }}</span>
+            <span class="feature-cell" data-label="Passed">{{ panel.summary.passed }}</span>
+            <span class="feature-cell" data-label="Failed + Error">{{ panel.summary.failed + panel.summary.errored }}</span>
+            <span class="feature-cell" data-label="Skipped">{{ panel.summary.skipped }}</span>
           </summary>
 
           <div class="feature-overview-body">
