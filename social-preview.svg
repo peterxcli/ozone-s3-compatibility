@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">Apache Ozone S3 Compatibility</title>
-  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint.</desc>
+  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, latest run Apr 3, 2026, 3:27 AM UTC.</desc>
 
   <defs>
     <linearGradient id="page" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -45,37 +45,34 @@
 
   <g font-family="'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="600">
     <g transform="translate(60 456)">
-      <rect width="268" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">Apr 1, 2026, 9:47 PM GMT+8</text>
+      <rect width="308" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
+      <text x="18" y="25" fill="#12263f">Apr 3, 2026, 3:27 AM UTC</text>
     </g>
-    <g transform="translate(342 456)">
-      <rect width="188" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">Ozone 561cbeb3b247</text>
+    <g transform="translate(382 456)">
+      <rect width="184" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
+      <text x="18" y="25" fill="#12263f">Ozone 8fbe16b4efaa</text>
     </g>
   </g>
 
   <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">
-    <g transform="translate(544 456)">
-      <rect width="124" height="40" rx="20" fill="#0f9d71" fill-opacity="0.10" stroke="#0f9d71" stroke-opacity="0.24" />
+    <g transform="translate(580 456)">
+      <rect width="144" height="40" rx="20" fill="#0f9d71" fill-opacity="0.10" stroke="#0f9d71" stroke-opacity="0.24" />
       <text x="20" y="26" fill="#0f9d71">Full nightly</text>
     </g>
     <g transform="translate(60 510)">
-      <rect width="112" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="24" y="26" fill="#12263f">completed</text>
-    </g>
-    <g transform="translate(186 510)">
-      <rect width="178" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="20" y="26" fill="#0b6286">GitHub Actions run</text>
+      <rect width="117" height="40" rx="20" fill="#0f9d71" fill-opacity="0.10" stroke="#0f9d71" stroke-opacity="0.24" />
+      <text x="20" y="26" fill="#0f9d71">completed</text>
     </g>
   </g>
 
   <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#12263f">
+
     <g transform="translate(690 62)">
       <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
       <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">S3-TESTS</text>
-      <text x="24" y="86" font-size="22" font-weight="700">885 eligible cases</text>
-      <text x="24" y="152" font-size="58" font-weight="500">23.9%</text>
-      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">212 passed, 673 failed/error, 157 skipped</text>
+      <text x="24" y="86" font-size="22" font-weight="700">742 eligible cases</text>
+      <text x="24" y="152" font-size="58" font-weight="500">26.3%</text>
+      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">195 passed, 547 failed/error, 69 skipped</text>
       <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.0 pts vs previous</text>
     </g>
 
@@ -85,7 +82,8 @@
       <text x="24" y="86" font-size="22" font-weight="700">52 eligible cases</text>
       <text x="24" y="152" font-size="58" font-weight="500">84.6%</text>
       <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">44 passed, 8 failed/error, 2 skipped</text>
-      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+2.0 pts vs previous</text>
+      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.0 pts vs previous</text>
     </g>
   </g>
 </svg>
+
