@@ -64,6 +64,7 @@ const showDatanodesChip = computed(
       <SuiteCard
         v-for="entry in orderedSuites"
         :key="entry.key"
+        :suite-key="entry.key"
         :suite="entry.suite"
         :open-by-default="defaultSuiteOpen"
       />
