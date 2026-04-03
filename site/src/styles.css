@@ -736,6 +736,7 @@ th {
   border-radius: var(--radius-sm);
   background: #fbfdff;
   overflow: hidden;
+  min-width: 0;
 }
 
 .feature-overview-summary {
@@ -770,6 +771,7 @@ th {
   padding: 0 0.95rem 0.95rem;
   display: grid;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .feature-detail-empty {
@@ -783,6 +785,7 @@ th {
 .case-list {
   display: grid;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .case-item {
@@ -790,6 +793,7 @@ th {
   border-radius: var(--radius-sm);
   padding: 0.85rem 0.95rem;
   background: #fff;
+  min-width: 0;
 }
 
 .case-item-head {
@@ -799,9 +803,14 @@ th {
   align-items: flex-start;
 }
 
+.case-item-head > div {
+  min-width: 0;
+}
+
 .case-item h5 {
   margin: 0;
   font-size: 0.96rem;
+  overflow-wrap: anywhere;
 }
 
 .case-meta,
@@ -810,6 +819,11 @@ th {
   flex-wrap: wrap;
   gap: 0.45rem;
   margin-top: 0.55rem;
+}
+
+.case-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .feature-tag {
@@ -829,6 +843,9 @@ th {
   color: #894f11;
   border: 1px solid rgba(255, 138, 61, 0.25);
   white-space: pre-wrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .loading {
