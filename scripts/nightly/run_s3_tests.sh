@@ -82,12 +82,11 @@ if [[ ${suite_exit} -eq 0 ]]; then
   pytest_args=("--junitxml" "${RAW_DIR}/s3-tests/junit.xml")
   if [[ -n "${S3_TESTS_MARK_EXPR:-}" ]]; then
     pytest_args+=("-m" "${S3_TESTS_MARK_EXPR}")
-    nightly_log "Running s3-tests selection: ${S3_TESTS_ARGS} (pytest -m ${S3_TESTS_MARK_EXPR})"
-  else
-    nightly_log "Running s3-tests selection: ${S3_TESTS_ARGS}"
   fi
   read -r -a selection_args <<< "${S3_TESTS_ARGS}"
   pytest_args+=("${selection_args[@]}")
+  printf -v pytest_cmd_preview '%q ' python -m pytest "${pytest_args[@]}"
+  nightly_log "Running s3-tests command: ${pytest_cmd_preview% }"
   set +e
   python -m pytest "${pytest_args[@]}" \
     2>&1 | tee "${RAW_DIR}/s3-tests/pytest.log"
