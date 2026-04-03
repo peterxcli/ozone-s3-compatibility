@@ -39,11 +39,21 @@ jobs:
       - name: Refresh published UI assets
         run: |
           set -euo pipefail
-          cp site/index.html .pages-repo/index.html
-          cp site/app.js .pages-repo/app.js
-          cp site/styles.css .pages-repo/styles.css
-          cp site/social-preview.svg .pages-repo/social-preview.svg
-          cp site/social-preview.png .pages-repo/social-preview.png
+          source_dir="site"
+          if [ -d .pages-repo/data/runs ] && find .pages-repo/data/runs -maxdepth 1 -name '*.json' | grep -q .; then
+            latest_run="$(find .pages-repo/data/runs -maxdepth 1 -name '*.json' | sort | tail -n 1)"
+            python3 scripts/build_pages.py \
+              --output-dir out/pages-ui-refresh \
+              --new-run "${latest_run}" \
+              --existing-runs-dir .pages-repo/data/runs
+            source_dir="out/pages-ui-refresh"
+          fi
+
+          cp "${source_dir}/index.html" .pages-repo/index.html
+          cp "${source_dir}/app.js" .pages-repo/app.js
+          cp "${source_dir}/styles.css" .pages-repo/styles.css
+          cp "${source_dir}/social-preview.svg" .pages-repo/social-preview.svg
+          cp "${source_dir}/social-preview.png" .pages-repo/social-preview.png
           touch .pages-repo/.nojekyll
 
       - name: Commit and push gh-pages

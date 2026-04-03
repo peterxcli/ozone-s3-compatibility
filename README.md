@@ -47,7 +47,7 @@ If you only want to publish frontend changes from `site/` without rebuilding run
 ## Publish Paths
 
 - `nightly.yml`: runs Ozone, `s3-tests`, and Mint, normalizes a new run, rebuilds the full Pages output, and publishes both UI and `data/` to `gh-pages`
-- `refresh-pages-ui.yml`: copies only `site/index.html`, `site/app.js`, `site/styles.css`, and `.nojekyll` to `gh-pages`; existing published `data/` stays unchanged
+- `refresh-pages-ui.yml`: refreshes the published UI while keeping existing `data/` intact, and regenerates `social-preview.svg` from the latest published run so the OG image stays current
 
 ## Local Run
 

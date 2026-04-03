@@ -8,10 +8,13 @@ import re
 import shutil
 from collections import defaultdict
 from datetime import UTC, datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
 from normalize_run import normalize_mint_suite, normalize_s3_suite, overall_status
+
+DEFAULT_S3_TESTS_ARGS = "s3tests/functional"
 
 
 def parse_args() -> argparse.Namespace:
@@ -251,6 +254,206 @@ def build_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def format_preview_timestamp(value: str) -> str:
+    moment = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+    hour = moment.hour % 12 or 12
+    meridiem = "AM" if moment.hour < 12 else "PM"
+    return f"{moment.strftime('%b')} {moment.day}, {moment.year}, {hour}:{moment.strftime('%M')} {meridiem} UTC"
+
+
+def format_percent(rate: float | None) -> str:
+    if rate is None:
+        return "—"
+    return f"{rate * 100:.1f}%"
+
+
+def execution_scope(execution: dict[str, Any] | None) -> tuple[str, str]:
+    if not execution:
+        return "unknown", "Run inputs unavailable"
+
+    mint_targets = execution.get("mint_targets", [])
+    if isinstance(mint_targets, str):
+        mint_targets = [target for target in mint_targets.split() if target]
+
+    s3_tests_args = execution.get("s3_tests_args") or DEFAULT_S3_TESTS_ARGS
+    if s3_tests_args != DEFAULT_S3_TESTS_ARGS or mint_targets:
+        return "subset", "Subset run"
+
+    return "full", "Full nightly"
+
+
+def pill_width(label: str, minimum: int = 112) -> int:
+    return max(minimum, 36 + len(label) * 9)
+
+
+def delta_text_and_fill(delta: float | None, rate: float | None) -> tuple[str, str]:
+    if rate is None:
+        return "No eligible cases", "#60758e"
+    if delta is None:
+        return "No previous data", "#60758e"
+    if delta >= 0:
+        return f"+{delta * 100:.1f} pts vs previous", "#0f9d71"
+    return f"{delta * 100:.1f} pts vs previous", "#d2493a"
+
+
+def suite_delta(runs: list[dict[str, Any]], suite_key: str) -> float | None:
+    if len(runs) < 2:
+        return None
+
+    latest_suite = runs[0]["suites"].get(suite_key)
+    if not latest_suite:
+        return None
+
+    latest_rate = latest_suite["summary"].get("compatibility_rate")
+    if latest_rate is None:
+        return None
+
+    for previous in runs[1:]:
+        previous_suite = previous["suites"].get(suite_key)
+        if not previous_suite:
+            continue
+        previous_rate = previous_suite["summary"].get("compatibility_rate")
+        if previous_rate is not None:
+            return latest_rate - previous_rate
+
+    return None
+
+
+def status_colors(status: str) -> tuple[str, str, str]:
+    if status == "completed":
+        return "#0f9d71", "#0f9d71", "0.10"
+    if status == "partial":
+        return "#ff8a3d", "#ff8a3d", "0.12"
+    if status in {"build_failed", "cluster_failed"}:
+        return "#d2493a", "#d2493a", "0.12"
+    return "#60758e", "#60758e", "0.10"
+
+
+def scope_colors(kind: str) -> tuple[str, str, str]:
+    if kind == "full":
+        return "#0f9d71", "#0f9d71", "0.10"
+    if kind == "subset":
+        return "#ff8a3d", "#ff8a3d", "0.12"
+    return "#60758e", "#60758e", "0.10"
+
+
+def render_suite_card(run: dict[str, Any], runs: list[dict[str, Any]], suite_key: str, x: int, y: int) -> str:
+    suite = run["suites"].get(suite_key, {})
+    summary = suite.get("summary", {})
+    delta = suite_delta(runs, suite_key)
+    delta_text, delta_fill = delta_text_and_fill(delta, summary.get("compatibility_rate"))
+    failed_or_errored = summary.get("failed", 0) + summary.get("errored", 0)
+    label = escape((suite.get("label") or suite_key).upper())
+
+    return f"""
+    <g transform="translate({x} {y})">
+      <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
+      <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">{label}</text>
+      <text x="24" y="86" font-size="22" font-weight="700">{summary.get("eligible", 0)} eligible cases</text>
+      <text x="24" y="152" font-size="58" font-weight="500">{escape(format_percent(summary.get("compatibility_rate")))}</text>
+      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">{summary.get("passed", 0)} passed, {failed_or_errored} failed/error, {summary.get("skipped", 0)} skipped</text>
+      <text x="24" y="216" font-size="18" font-weight="800" fill="{delta_fill}">{escape(delta_text)}</text>
+    </g>"""
+
+
+def write_social_preview(index_payload: dict[str, Any], output_path: Path) -> None:
+    runs = index_payload.get("runs", [])
+    if not runs:
+        return
+
+    latest = runs[0]
+    execution = latest.get("execution")
+    scope_kind, scope_label = execution_scope(execution)
+    scope_fill, scope_stroke, scope_bg_opacity = scope_colors(scope_kind)
+    status_fill, status_stroke, status_bg_opacity = status_colors(latest.get("status", ""))
+    scope_width = pill_width(scope_label, minimum=128)
+    status_label = (latest.get("status") or "unknown").replace("_", " ")
+    status_width = pill_width(status_label)
+    latest_time = format_preview_timestamp(latest.get("finished_at") or latest["started_at"])
+    ozone_commit = latest.get("sources", {}).get("ozone", {}).get("short_commit", "unknown")
+    title = "Apache Ozone S3 Compatibility"
+    description = (
+        "Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, "
+        f"latest run {latest_time}."
+    )
+
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">{escape(title)}</title>
+  <desc id="desc">{escape(description)}</desc>
+
+  <defs>
+    <linearGradient id="page" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fbff" />
+      <stop offset="100%" stop-color="#f4f7fb" />
+    </linearGradient>
+    <radialGradient id="glowBlue" cx="18%" cy="18%" r="45%">
+      <stop offset="0%" stop-color="#0d7fab" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#0d7fab" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glowWarm" cx="86%" cy="14%" r="38%">
+      <stop offset="0%" stop-color="#ff8a3d" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#ff8a3d" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.96" />
+      <stop offset="100%" stop-color="#f7faff" stop-opacity="0.88" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#102d4c" flood-opacity="0.10" />
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#page)" />
+  <rect width="1200" height="630" fill="url(#glowBlue)" />
+  <rect width="1200" height="630" fill="url(#glowWarm)" />
+
+  <g filter="url(#shadow)">
+    <rect x="28" y="24" width="1144" height="582" rx="36" fill="#ffffff" fill-opacity="0.86" stroke="#ffffff" stroke-opacity="0.75" />
+  </g>
+
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#12263f">
+    <text x="60" y="78" font-size="15" font-weight="800" letter-spacing="3" fill="#0b6286">NIGHTLY GITHUB PAGES REPORT</text>
+
+    <text x="60" y="152" font-size="72" font-weight="800">Apache Ozone</text>
+    <text x="60" y="228" font-size="72" font-weight="800">S3</text>
+    <text x="60" y="304" font-size="72" font-weight="800">Compatibility</text>
+
+    <text x="60" y="368" font-size="20" font-weight="500" fill="#60758e">Tracks daily compatibility against ceph/s3-tests</text>
+    <text x="60" y="400" font-size="20" font-weight="500" fill="#60758e">and minio/mint from a fresh Ozone build and packaged cluster.</text>
+  </g>
+
+  <g font-family="'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="600">
+    <g transform="translate(60 456)">
+      <rect width="308" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
+      <text x="18" y="25" fill="#12263f">{escape(latest_time)}</text>
+    </g>
+    <g transform="translate(382 456)">
+      <rect width="184" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
+      <text x="18" y="25" fill="#12263f">Ozone {escape(ozone_commit)}</text>
+    </g>
+  </g>
+
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">
+    <g transform="translate(580 456)">
+      <rect width="{scope_width}" height="40" rx="20" fill="{scope_fill}" fill-opacity="{scope_bg_opacity}" stroke="{scope_stroke}" stroke-opacity="0.24" />
+      <text x="20" y="26" fill="{scope_fill}">{escape(scope_label)}</text>
+    </g>
+    <g transform="translate(60 510)">
+      <rect width="{status_width}" height="40" rx="20" fill="{status_fill}" fill-opacity="{status_bg_opacity}" stroke="{status_stroke}" stroke-opacity="0.24" />
+      <text x="20" y="26" fill="{status_fill}">{escape(status_label)}</text>
+    </g>
+  </g>
+
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#12263f">
+{render_suite_card(latest, runs, "s3_tests", 690, 62)}
+{render_suite_card(latest, runs, "mint", 690, 342)}
+  </g>
+</svg>
+"""
+
+    output_path.write_text(svg + "\n", encoding="utf-8")
+
+
 def copy_tree(source: Path, target: Path) -> None:
     for file_path in source.rglob("*"):
         if file_path.is_dir():
@@ -288,6 +491,7 @@ def main() -> None:
     )
 
     copy_tree(site_dir, output_dir)
+    write_social_preview(index_payload, output_dir / "social-preview.svg")
     (output_dir / ".nojekyll").write_text("", encoding="utf-8")
 
 
