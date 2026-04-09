@@ -1,11 +1,2551 @@
 {
-  "generated_at": "2026-04-08T05:52:21Z",
+  "generated_at": "2026-04-09T05:49:20Z",
   "rate_formula": "compatibility_rate = passed / (passed + failed + errored); skipped and NA are excluded",
   "suite_order": [
     "s3_tests",
     "mint"
   ],
   "runs": [
+    {
+      "id": "2026-04-09T04-42-10Z",
+      "status": "completed",
+      "started_at": "2026-04-09T04:42:10Z",
+      "finished_at": "2026-04-09T05:49:20Z",
+      "workflow_run_url": "https://github.com/peterxcli/ozone-s3-compatibility/actions/runs/24172775161",
+      "execution": {
+        "s3_tests_args": "s3tests/functional",
+        "mint_mode": "core",
+        "mint_targets": [],
+        "ozone_datanodes": "1"
+      },
+      "file": "data/runs/2026-04-09T04-42-10Z.json",
+      "sources": {
+        "ozone": {
+          "repo": "https://github.com/apache/ozone.git",
+          "ref": "master",
+          "commit": "d2d374b67499ef477576b9ea1f13c0eab84e240b",
+          "short_commit": "d2d374b67499"
+        },
+        "s3_tests": {
+          "repo": "https://github.com/ceph/s3-tests.git",
+          "ref": "master",
+          "commit": "c29bf103f62df65ed342ca4efb1f6d41a77e81e7",
+          "short_commit": "c29bf103f62d"
+        },
+        "mint": {
+          "repo": "https://github.com/minio/mint.git",
+          "ref": "master",
+          "commit": "12559d50625b722d11fd798ae8ac2fb204e66dd1",
+          "short_commit": "12559d50625b"
+        }
+      },
+      "suites": {
+        "s3_tests": {
+          "label": "s3-tests",
+          "status": "completed",
+          "summary": {
+            "total": 811,
+            "passed": 195,
+            "failed": 547,
+            "errored": 0,
+            "skipped": 69,
+            "eligible": 742,
+            "compatibility_rate": 0.2628
+          },
+          "feature_summaries": [
+            {
+              "name": "s3",
+              "label": "s3",
+              "summary": {
+                "total": 316,
+                "passed": 112,
+                "failed": 204,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 316,
+                "compatibility_rate": 0.3544
+              },
+              "examples": [
+                {
+                  "name": "test_bucket_list_encoding_basic",
+                  "status": "fail",
+                  "message": "AssertionError: assert ['foo%2B1/', ...', 'quux+ab/'] == ['foo%2B1/', ... 'quux%20ab/']\n  \n  At index 2 diff: 'quux+ab/' != 'quux%20ab/'\n  \n  Full diff:\n    [\n        'foo%2B1/',\n        'foo/',\n  -     'quux%20ab/',\n  ?          ^^^\n  +     'quux+ab/',\n  ?          ^\n    ]"
+                },
+                {
+                  "name": "test_bucket_list_prefix_empty",
+                  "status": "fail",
+                  "message": "KeyError: 'Prefix'"
+                },
+                {
+                  "name": "test_bucket_list_prefix_none",
+                  "status": "fail",
+                  "message": "KeyError: 'Prefix'"
+                },
+                {
+                  "name": "test_bucket_list_prefix_unreadable",
+                  "status": "fail",
+                  "message": "AssertionError: assert '%0A' == '\\n'\n  \n  Strings contain only whitespace, escaping them using repr()\n  - '\\n'\n  + '%0A'"
+                },
+                {
+                  "name": "test_bucket_list_prefix_delimiter_prefix_not_exist",
+                  "status": "fail",
+                  "message": "AssertionError: assert ['b/a/c', 'b/... 'b/a/r', 'g'] == []\n  \n  Left contains 4 more items, first extra item: 'b/a/c'\n  \n  Full diff:\n  - []\n  + [\n  +     'b/a/c',\n  +     'b/a/g',\n  +     'b/a/r',\n  +     'g',\n  + ]"
+                },
+                {
+                  "name": "test_bucket_list_maxkeys_invalid",
+                  "status": "fail",
+                  "message": "AssertionError: assert '' == 'InvalidArgument'\n  \n  - InvalidArgument"
+                },
+                {
+                  "name": "test_bucket_list_return_data",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the GetObjectAcl operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_bucket_list_return_data_versioning",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_list_objects_anonymous",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.InvalidRequest: An error occurred (InvalidRequest) when calling the PutBucketAcl operation: Premature end of file."
+                },
+                {
+                  "name": "test_bucket_list_objects_anonymous_fail",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'InvalidRequest' == 'AccessDenied'\n  \n  - AccessDenied\n  + InvalidRequest"
+                },
+                {
+                  "name": "test_bucket_concurrent_set_canned_acl",
+                  "status": "fail",
+                  "message": "assert False == True"
+                },
+                {
+                  "name": "test_object_write_with_chunked_transfer_encoding",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (XAmzContentSHA256Mismatch) when calling the PutObject operation: The provided 'x-amz-content-sha256' header does not match the computed hash."
+                }
+              ]
+            },
+            {
+              "name": "encryption",
+              "label": "encryption",
+              "summary": {
+                "total": 108,
+                "passed": 11,
+                "failed": 97,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 108,
+                "compatibility_rate": 0.1019
+              },
+              "examples": [
+                {
+                  "name": "test_multipart_sse_c_get_part",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_non_multipart_sse_c_get_part",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_encryption_sse_c_method_head",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_encryption_sse_c_present",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_encryption_sse_c_other_key",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_encryption_sse_c_invalid_md5",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_encryption_sse_c_no_md5",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_encryption_sse_c_no_key",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_encryption_key_no_sse_c",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_encryption_sse_c_multipart_upload",
+                  "status": "fail",
+                  "message": "AssertionError: assert {} == {'foo': 'bar'}\n  \n  Right contains 1 more item:\n  {'foo': 'bar'}\n  \n  Full diff:\n  + {}\n  - {\n  -     'foo': 'bar',\n  - }"
+                },
+                {
+                  "name": "test_encryption_sse_c_unaligned_multipart_upload",
+                  "status": "fail",
+                  "message": "AssertionError: assert {} == {'foo': 'bar'}\n  \n  Right contains 1 more item:\n  {'foo': 'bar'}\n  \n  Full diff:\n  + {}\n  - {\n  -     'foo': 'bar',\n  - }"
+                },
+                {
+                  "name": "test_encryption_sse_c_multipart_invalid_chunks_1",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                }
+              ]
+            },
+            {
+              "name": "list_objects_v2",
+              "label": "list objects v2",
+              "summary": {
+                "total": 50,
+                "passed": 31,
+                "failed": 19,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 50,
+                "compatibility_rate": 0.62
+              },
+              "examples": [
+                {
+                  "name": "test_bucket_listv2_encoding_basic",
+                  "status": "fail",
+                  "message": "AssertionError: assert ['foo%2B1/', ...', 'quux+ab/'] == ['foo%2B1/', ... 'quux%20ab/']\n  \n  At index 2 diff: 'quux+ab/' != 'quux%20ab/'\n  \n  Full diff:\n    [\n        'foo%2B1/',\n        'foo/',\n  -     'quux%20ab/',\n  ?          ^^^\n  +     'quux+ab/',\n  ?          ^\n    ]"
+                },
+                {
+                  "name": "test_bucket_listv2_fetchowner_defaultempty",
+                  "status": "fail",
+                  "message": "assert not 'Owner' in {'ETag': '\"82d0f0fa8551de8b7eb5ecb65eae0261\"', 'Key': 'foo/bar', 'LastModified': datetime.datetime(2026, 4, 9, 4, 53, ...{'DisplayName': 'OZONEACCESSKEY000001', 'ID': 'bb2bd7ca4a327f84e6cd3979f8fa3828a50a08893c1b68f9d6715352c8d07b93'}, ...}"
+                },
+                {
+                  "name": "test_bucket_listv2_fetchowner_empty",
+                  "status": "fail",
+                  "message": "assert not 'Owner' in {'ETag': '\"82d0f0fa8551de8b7eb5ecb65eae0261\"', 'Key': 'foo/bar', 'LastModified': datetime.datetime(2026, 4, 9, 4, 53, ...{'DisplayName': 'OZONEACCESSKEY000001', 'ID': 'bb2bd7ca4a327f84e6cd3979f8fa3828a50a08893c1b68f9d6715352c8d07b93'}, ...}"
+                },
+                {
+                  "name": "test_bucket_listv2_prefix_empty",
+                  "status": "fail",
+                  "message": "KeyError: 'Prefix'"
+                },
+                {
+                  "name": "test_bucket_listv2_prefix_none",
+                  "status": "fail",
+                  "message": "KeyError: 'Prefix'"
+                },
+                {
+                  "name": "test_bucket_listv2_prefix_unreadable",
+                  "status": "fail",
+                  "message": "AssertionError: assert ['foo/bar', 'foo/baz', 'quux'] == []\n  \n  Left contains 3 more items, first extra item: 'foo/bar'\n  \n  Full diff:\n  - []\n  + [\n  +     'foo/bar',\n  +     'foo/baz',\n  +     'quux',\n  + ]"
+                },
+                {
+                  "name": "test_bucket_listv2_prefix_delimiter_prefix_not_exist",
+                  "status": "fail",
+                  "message": "AssertionError: assert ['b/a/c', 'b/... 'b/a/r', 'g'] == []\n  \n  Left contains 4 more items, first extra item: 'b/a/c'\n  \n  Full diff:\n  - []\n  + [\n  +     'b/a/c',\n  +     'b/a/g',\n  +     'b/a/r',\n  +     'g',\n  + ]"
+                },
+                {
+                  "name": "test_bucket_listv2_continuationtoken_empty",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (InvalidArgument) when calling the ListObjectsV2 operation: Invalid Argument"
+                },
+                {
+                  "name": "test_bucket_listv2_continuationtoken",
+                  "status": "fail",
+                  "message": "KeyError: 'ContinuationToken'"
+                },
+                {
+                  "name": "test_bucket_listv2_both_continuationtoken_startafter",
+                  "status": "fail",
+                  "message": "KeyError: 'ContinuationToken'"
+                },
+                {
+                  "name": "test_bucket_listv2_objects_anonymous",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.InvalidRequest: An error occurred (InvalidRequest) when calling the PutBucketAcl operation: Premature end of file."
+                },
+                {
+                  "name": "test_bucket_listv2_objects_anonymous_fail",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'InvalidRequest' == 'AccessDenied'\n  \n  - AccessDenied\n  + InvalidRequest"
+                }
+              ]
+            },
+            {
+              "name": "headers",
+              "label": "headers",
+              "summary": {
+                "total": 48,
+                "passed": 14,
+                "failed": 34,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 48,
+                "compatibility_rate": 0.2917
+              },
+              "examples": [
+                {
+                  "name": "test_object_create_bad_md5_invalid_short",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'BadDigest' == 'InvalidDigest'\n  \n  - InvalidDigest\n  + BadDigest"
+                },
+                {
+                  "name": "test_object_create_bad_md5_empty",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'BadDigest' == 'InvalidDigest'\n  \n  - InvalidDigest\n  + BadDigest"
+                },
+                {
+                  "name": "test_object_create_bad_expect_mismatch",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (417) when calling the PutObject operation: Expectation Failed"
+                },
+                {
+                  "name": "test_object_create_bad_contentlength_none",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_object_create_bad_contenttype_empty",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.InvalidRequest: An error occurred (InvalidRequest) when calling the PutObject operation: Error creating s3 auth info. The request may not be signed using AWS V4 signing algorithm, or might be invalid"
+                },
+                {
+                  "name": "test_object_create_bad_authorization_empty",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_object_create_date_and_amz_date",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.InvalidRequest: An error occurred (InvalidRequest) when calling the PutObject operation: Error creating s3 auth info. The request may not be signed using AWS V4 signing algorithm, or might be invalid"
+                },
+                {
+                  "name": "test_object_create_amz_date_and_no_date",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.InvalidRequest: An error occurred (InvalidRequest) when calling the PutObject operation: Error creating s3 auth info. The request may not be signed using AWS V4 signing algorithm, or might be invalid"
+                },
+                {
+                  "name": "test_object_create_bad_authorization_none",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_object_acl_create_contentlength_none",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (NotImplemented) when calling the PutObjectAcl operation: This part of feature is not implemented yet."
+                },
+                {
+                  "name": "test_bucket_create_bad_expect_mismatch",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (417) when calling the CreateBucket operation: Expectation Failed"
+                },
+                {
+                  "name": "test_bucket_create_bad_authorization_empty",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                }
+              ]
+            },
+            {
+              "name": "parametrize",
+              "label": "parametrize",
+              "summary": {
+                "total": 45,
+                "passed": 0,
+                "failed": 45,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 45,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_copy_part_enc[sse-s3-sse-s3-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_part_enc[sse-s3-sse-c-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_part_enc[sse-s3-sse-kms-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_part_enc[sse-c-sse-s3-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_part_enc[sse-c-sse-c-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_part_enc[sse-c-sse-kms-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_part_enc[sse-kms-sse-s3-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_part_enc[sse-kms-sse-c-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_part_enc[sse-kms-sse-kms-STANDARD-STANDARD-8388608]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_enc[sse-s3-sse-s3-STANDARD-STANDARD-1]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_enc[sse-s3-sse-s3-STANDARD-STANDARD-1024]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_copy_enc[sse-s3-sse-s3-STANDARD-STANDARD-1048576]",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the PutObject operation (reached max retries: 4): Internal Server Error"
+                }
+              ]
+            },
+            {
+              "name": "s3select",
+              "label": "s3select",
+              "summary": {
+                "total": 34,
+                "passed": 2,
+                "failed": 32,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 34,
+                "compatibility_rate": 0.0588
+              },
+              "examples": [
+                {
+                  "name": "test_generate_where_clause",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_generate_projection",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_count_operation",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_count_json_operation",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_json_column_sum_min_max",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_json_nullif_expressions",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_column_sum_min_max",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the CreateBucket operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_nullif_expressions",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_nulliftrue_expressions",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_is_not_null_expressions",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_lowerupper_expressions",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                },
+                {
+                  "name": "test_in_expressions",
+                  "status": "fail",
+                  "message": "botocore.eventstream.ChecksumMismatch: Checksum mismatch: expected 0x7273696f, calculated 0x62b8354c"
+                }
+              ]
+            },
+            {
+              "name": "copy",
+              "label": "copy",
+              "summary": {
+                "total": 33,
+                "passed": 14,
+                "failed": 19,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 33,
+                "compatibility_rate": 0.4242
+              },
+              "examples": [
+                {
+                  "name": "test_object_copy_verify_contenttype",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'application/octet-stream' == 'text/bla'\n  \n  - text/bla\n  + application/octet-stream"
+                },
+                {
+                  "name": "test_object_copy_to_itself_with_metadata",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.InvalidRequest: An error occurred (InvalidRequest) when calling the CopyObject operation: This copy request is illegal because it is trying to copy an object to it self itself without changing the object's metadata, storage class, website redirect location or encryption attributes."
+                },
+                {
+                  "name": "test_object_copy_not_owned_bucket",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_object_copy_not_owned_object_bucket",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (500) when calling the GetObjectAcl operation (reached max retries: 4): Internal Server Error"
+                },
+                {
+                  "name": "test_object_copy_retaining_metadata",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'audio/ogg' == 'application/octet-stream'\n  \n  - application/octet-stream\n  + audio/ogg"
+                },
+                {
+                  "name": "test_object_copy_replacing_metadata",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'audio/mpeg' == 'application/octet-stream'\n  \n  - application/octet-stream\n  + audio/mpeg"
+                },
+                {
+                  "name": "test_object_copy_versioned_bucket",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_object_copy_versioned_url_encoding",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_object_copy_versioning_multipart_upload",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_multipart_copy_invalid_range",
+                  "status": "fail",
+                  "message": "AssertionError: Invalid response 500"
+                },
+                {
+                  "name": "test_multipart_copy_improper_range",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_multipart_copy_versioned",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "bucket_policy",
+              "label": "bucket policy",
+              "summary": {
+                "total": 31,
+                "passed": 0,
+                "failed": 29,
+                "errored": 0,
+                "skipped": 2,
+                "eligible": 29,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_bucket_policy",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucketv2_policy",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_deny_self_denied_policy",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_bucket_policy_deny_self_denied_policy_confirm_header",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_bucket_policy_acl",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.InvalidRequest: An error occurred (InvalidRequest) when calling the PutBucketAcl operation: Premature end of file."
+                },
+                {
+                  "name": "test_bucketv2_policy_acl",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.InvalidRequest: An error occurred (InvalidRequest) when calling the PutBucketAcl operation: Premature end of file."
+                },
+                {
+                  "name": "test_bucket_policy_different_tenant",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_multipart",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_bucket_policy_tenanted_bucket",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_another_bucket",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucketv2_policy_another_bucket",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_set_condition_operator_end_with_IfExists",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "webidentity_test",
+              "label": "webidentity test",
+              "summary": {
+                "total": 27,
+                "passed": 0,
+                "failed": 27,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 27,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_assume_role_with_web_identity",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_on_different_buckets",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_on_same_bucket",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_put_obj_denial",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_swapping_role_policy_and_session_policy",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_different_op_permissions",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_with_deny_effect",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_with_deny_on_same_op",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_bucket_policy_role_arn",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_bucket_policy_session_arn",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_copy_object",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_no_bucket_role_policy",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "iam_tenant",
+              "label": "iam tenant",
+              "summary": {
+                "total": 27,
+                "passed": 2,
+                "failed": 25,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 27,
+                "compatibility_rate": 0.0741
+              },
+              "examples": [
+                {
+                  "name": "test_put_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_put_user_policy_invalid_user",
+                  "status": "fail",
+                  "message": "assert 400 == 404"
+                },
+                {
+                  "name": "test_put_existing_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_list_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_list_user_policy_invalid_user",
+                  "status": "fail",
+                  "message": "assert 400 == 404"
+                },
+                {
+                  "name": "test_get_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_get_user_policy_invalid_user",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_get_user_policy_invalid_policy_name",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_get_deleted_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_get_user_policy_from_multiple_policies",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_delete_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_delete_user_policy_invalid_user",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                }
+              ]
+            },
+            {
+              "name": "user_policy",
+              "label": "user policy",
+              "summary": {
+                "total": 30,
+                "passed": 2,
+                "failed": 25,
+                "errored": 0,
+                "skipped": 3,
+                "eligible": 27,
+                "compatibility_rate": 0.0741
+              },
+              "examples": [
+                {
+                  "name": "test_put_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_put_user_policy_invalid_user",
+                  "status": "fail",
+                  "message": "assert 400 == 404"
+                },
+                {
+                  "name": "test_put_existing_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_list_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_list_user_policy_invalid_user",
+                  "status": "fail",
+                  "message": "assert 400 == 404"
+                },
+                {
+                  "name": "test_get_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_get_user_policy_invalid_user",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_get_user_policy_invalid_policy_name",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_get_deleted_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_get_user_policy_from_multiple_policies",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_delete_user_policy",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                },
+                {
+                  "name": "test_delete_user_policy_invalid_user",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the PutUserPolicy operation: Unknown"
+                }
+              ]
+            },
+            {
+              "name": "tagging",
+              "label": "tagging",
+              "summary": {
+                "total": 25,
+                "passed": 8,
+                "failed": 17,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 25,
+                "compatibility_rate": 0.32
+              },
+              "examples": [
+                {
+                  "name": "test_set_bucket_tagging",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_get_obj_head_tagging",
+                  "status": "fail",
+                  "message": "KeyError: 'x-amz-tagging-count'"
+                },
+                {
+                  "name": "test_put_modify_tags",
+                  "status": "fail",
+                  "message": "AssertionError: assert [{'Key': 'key...alue': 'val'}] == [{'Key': 'key...lue': 'val2'}]\n  \n  At index 0 diff: {'Key': 'key2', 'Value': 'val2'} != {'Key': 'key', 'Value': 'val'}\n  \n  Full diff:\n    [\n  +     {\n  +         'Key': 'key2',\n  +         'Value': 'val2',\n  +     },\n        {\n            'Key': 'key',\n            'Value': 'val',\n        },\n  -     {\n  -         'Key': 'key2',\n  -         'Value': 'val2',\n  -     },\n    ]"
+                },
+                {
+                  "name": "test_post_object_tags_anonymous_request",
+                  "status": "fail",
+                  "message": "assert 403 == 204\n +  where 403 = <Response [403]>.status_code"
+                },
+                {
+                  "name": "test_post_object_tags_authenticated_request",
+                  "status": "fail",
+                  "message": "assert 403 == 204\n +  where 403 = <Response [403]>.status_code"
+                },
+                {
+                  "name": "test_put_obj_with_tags",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (InvalidTag) when calling the PutObject operation: Some tag values are not specified, please specify the tag values"
+                },
+                {
+                  "name": "test_get_tags_acl_public",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_put_tags_acl_public",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_delete_tags_obj_public",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_get_obj_existing_tag",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_get_obj_tagging_existing_tag",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_put_obj_tagging_existing_tag",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "lifecycle",
+              "label": "lifecycle",
+              "summary": {
+                "total": 23,
+                "passed": 0,
+                "failed": 21,
+                "errored": 0,
+                "skipped": 2,
+                "eligible": 21,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_lifecycle_set",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_get",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_delete",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_lifecycle_get_no_id",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_id_too_long",
+                  "status": "fail",
+                  "message": "assert 409 == 400"
+                },
+                {
+                  "name": "test_lifecycle_same_id",
+                  "status": "fail",
+                  "message": "assert 409 == 400"
+                },
+                {
+                  "name": "test_lifecycle_invalid_status",
+                  "status": "fail",
+                  "message": "assert 409 == 400"
+                },
+                {
+                  "name": "test_lifecycle_set_date",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_set_invalid_date",
+                  "status": "fail",
+                  "message": "assert 409 == 400"
+                },
+                {
+                  "name": "test_lifecycle_expiration_days0",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'BucketAlreadyExists' == 'InvalidArgument'\n  \n  - InvalidArgument\n  + BucketAlreadyExists"
+                },
+                {
+                  "name": "test_lifecycle_expiration_header_put",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_expiration_header_head",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "sse_s3",
+              "label": "sse s3",
+              "summary": {
+                "total": 21,
+                "passed": 0,
+                "failed": 21,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 21,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_bucket_policy_put_obj_s3_noenc",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_put_obj_s3_incorrect_algo_sse_s3",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_policy_put_obj_s3_kms",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_put_bucket_encryption_s3",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_get_bucket_encryption_s3",
+                  "status": "fail",
+                  "message": "AssertionError: assert '' == 'ServerSideEn...NotFoundError'\n  \n  - ServerSideEncryptionConfigurationNotFoundError"
+                },
+                {
+                  "name": "test_delete_bucket_encryption_s3",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'NoSuchBucket' == 'ServerSideEn...NotFoundError'\n  \n  - ServerSideEncryptionConfigurationNotFoundError\n  + NoSuchBucket"
+                },
+                {
+                  "name": "test_sse_s3_default_upload_1b",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_upload_1kb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_upload_1mb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_upload_8mb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_kms_default_upload_1b",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_kms_default_upload_1kb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "abac_test",
+              "label": "abac test",
+              "summary": {
+                "total": 12,
+                "passed": 0,
+                "failed": 12,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 12,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_assume_role_with_web_identity_with_request_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_with_principal_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_for_all_values",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_for_all_values_deny",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_tag_keys_trust_policy",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_tag_keys_role_policy",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_resource_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_resource_tag_deny",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_wrong_resource_tag_deny",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_resource_tag_princ_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_resource_tag_copy_obj",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_role_resource_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "bucket_encryption",
+              "label": "bucket encryption",
+              "summary": {
+                "total": 12,
+                "passed": 0,
+                "failed": 12,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 12,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_sse_s3_default_upload_1b",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_upload_1kb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_upload_1mb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_upload_8mb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_kms_default_upload_1b",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_kms_default_upload_1kb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_kms_default_upload_1mb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_kms_default_upload_8mb",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_method_head",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_multipart_upload",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_s3_default_post_object_authenticated_request",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_sse_kms_default_post_object_authenticated_request",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketEncryption operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "session_policy",
+              "label": "session policy",
+              "summary": {
+                "total": 12,
+                "passed": 0,
+                "failed": 12,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 12,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_session_policy_check_on_different_buckets",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_on_same_bucket",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_put_obj_denial",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_swapping_role_policy_and_session_policy",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_different_op_permissions",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_with_deny_effect",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_check_with_deny_on_same_op",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_bucket_policy_role_arn",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_bucket_policy_session_arn",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_copy_object",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_no_bucket_role_policy",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_session_policy_bucket_policy_deny",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "checksum",
+              "label": "checksum",
+              "summary": {
+                "total": 10,
+                "passed": 0,
+                "failed": 10,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 10,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_object_checksum_sha256",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumSHA256'"
+                },
+                {
+                  "name": "test_object_checksum_crc64nvme",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumCRC64NVME'"
+                },
+                {
+                  "name": "test_multipart_checksum_sha256",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumAlgorithm'"
+                },
+                {
+                  "name": "test_multipart_use_cksum_helper_sha256",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumAlgorithm'"
+                },
+                {
+                  "name": "test_multipart_use_cksum_helper_crc64nvme",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumAlgorithm'"
+                },
+                {
+                  "name": "test_multipart_use_cksum_helper_crc32",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumAlgorithm'"
+                },
+                {
+                  "name": "test_multipart_use_cksum_helper_crc32c",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumAlgorithm'"
+                },
+                {
+                  "name": "test_multipart_use_cksum_helper_sha1",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumAlgorithm'"
+                },
+                {
+                  "name": "test_post_object_upload_checksum",
+                  "status": "fail",
+                  "message": "assert 403 == 204\n +  where 403 = <Response [403]>.status_code"
+                },
+                {
+                  "name": "test_get_multipart_checksum_object_attributes",
+                  "status": "fail",
+                  "message": "KeyError: 'ChecksumSHA256'"
+                }
+              ]
+            },
+            {
+              "name": "test_of_sts",
+              "label": "test of sts",
+              "summary": {
+                "total": 9,
+                "passed": 0,
+                "failed": 9,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 9,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_get_session_token",
+                  "status": "fail",
+                  "message": "TypeError: 'NoneType' object is not subscriptable"
+                },
+                {
+                  "name": "test_assume_role_allow",
+                  "status": "fail",
+                  "message": "AssertionError: AuthorizationHeaderMalformed\nassert False"
+                },
+                {
+                  "name": "test_assume_role_deny",
+                  "status": "fail",
+                  "message": "AssertionError: AuthorizationHeaderMalformed\nassert False"
+                },
+                {
+                  "name": "test_assume_role_creds_expiry",
+                  "status": "fail",
+                  "message": "AssertionError: AuthorizationHeaderMalformed\nassert False"
+                },
+                {
+                  "name": "test_assume_role_deny_head_nonexistent",
+                  "status": "fail",
+                  "message": "AssertionError: AuthorizationHeaderMalformed\nassert False"
+                },
+                {
+                  "name": "test_assume_role_allow_head_nonexistent",
+                  "status": "fail",
+                  "message": "AssertionError: AuthorizationHeaderMalformed\nassert False"
+                },
+                {
+                  "name": "test_get_caller_identity_root",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the GetCallerIdentity operation: Unknown"
+                },
+                {
+                  "name": "test_get_caller_identity_non_root_user",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the CreateUser operation: Unknown"
+                },
+                {
+                  "name": "test_get_caller_identity_after_assume_role",
+                  "status": "fail",
+                  "message": "botocore.exceptions.ClientError: An error occurred (Unknown) when calling the CreateUser operation: Unknown"
+                }
+              ]
+            },
+            {
+              "name": "conditional_write",
+              "label": "conditional write",
+              "summary": {
+                "total": 7,
+                "passed": 0,
+                "failed": 7,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 7,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_put_object_if_match",
+                  "status": "fail",
+                  "message": "AssertionError: assert (412, 'PreconditionFailed') == (400, 'InvalidRequest')\n  \n  At index 0 diff: 412 != 400\n  \n  Full diff:\n    (\n  -     400,\n  ?      ^^\n  +     412,\n  ?      ^^\n  -     'InvalidRequest',\n  +     'PreconditionFailed',\n    )"
+                },
+                {
+                  "name": "test_multipart_put_object_if_match",
+                  "status": "fail",
+                  "message": "AssertionError: ClientError not raised"
+                },
+                {
+                  "name": "test_put_current_object_if_none_match",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_multipart_put_current_object_if_none_match",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_put_current_object_if_match",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_multipart_put_current_object_if_match",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_put_object_current_if_match",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "object_ownership",
+              "label": "object ownership",
+              "summary": {
+                "total": 7,
+                "passed": 0,
+                "failed": 7,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 7,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_create_bucket_bucket_owner_enforced",
+                  "status": "fail",
+                  "message": "KeyError: 'Rules'"
+                },
+                {
+                  "name": "test_create_bucket_bucket_owner_preferred",
+                  "status": "fail",
+                  "message": "KeyError: 'Rules'"
+                },
+                {
+                  "name": "test_create_bucket_object_writer",
+                  "status": "fail",
+                  "message": "KeyError: 'Rules'"
+                },
+                {
+                  "name": "test_put_bucket_ownership_bucket_owner_enforced",
+                  "status": "fail",
+                  "message": "assert 409 == 400"
+                },
+                {
+                  "name": "test_put_bucket_ownership_bucket_owner_preferred",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketOwnershipControls operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_put_bucket_ownership_object_writer",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketOwnershipControls operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_bucket_create_delete_bucket_ownership",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketOwnershipControls operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "bucket_logging",
+              "label": "bucket logging",
+              "summary": {
+                "total": 6,
+                "passed": 0,
+                "failed": 6,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 6,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_put_bucket_logging",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_put_bucket_logging_errors",
+                  "status": "fail",
+                  "message": "AssertionError: expected failure\nassert False"
+                },
+                {
+                  "name": "test_bucket_logging_owner",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_put_bucket_logging_permissions",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'BucketAlreadyExists' == 'AccessDenied'\n  \n  - AccessDenied\n  + BucketAlreadyExists"
+                },
+                {
+                  "name": "test_put_bucket_logging_policy_wildcard",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_rm_bucket_logging",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketPolicy operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "lifecycle_expiration",
+              "label": "lifecycle expiration",
+              "summary": {
+                "total": 7,
+                "passed": 0,
+                "failed": 6,
+                "errored": 0,
+                "skipped": 1,
+                "eligible": 6,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_lifecycle_expiration_days0",
+                  "status": "fail",
+                  "message": "AssertionError: assert 'BucketAlreadyExists' == 'InvalidArgument'\n  \n  - InvalidArgument\n  + BucketAlreadyExists"
+                },
+                {
+                  "name": "test_lifecycle_expiration_header_put",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_expiration_header_head",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_expiration_header_tags_head",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_expiration_header_and_tags_head",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketLifecycleConfiguration operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_lifecycle_plain_null_version_current_transition",
+                  "status": "skipped",
+                  "message": "requires 2 or more storage classes"
+                },
+                {
+                  "name": "test_delete_marker_expiration",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "token_resource_tags_test",
+              "label": "token resource tags test",
+              "summary": {
+                "total": 5,
+                "passed": 0,
+                "failed": 5,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 5,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_assume_role_with_web_identity_resource_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_resource_tag_deny",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_wrong_resource_tag_deny",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_resource_tag_princ_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_resource_tag_copy_obj",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "delete_marker",
+              "label": "delete marker",
+              "summary": {
+                "total": 4,
+                "passed": 0,
+                "failed": 4,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 4,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_delete_marker_nonversioned",
+                  "status": "fail",
+                  "message": "KeyError: 'x-amz-delete-marker'"
+                },
+                {
+                  "name": "test_delete_marker_versioned",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_delete_marker_suspended",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                },
+                {
+                  "name": "test_delete_marker_expiration",
+                  "status": "fail",
+                  "message": "botocore.errorfactory.BucketAlreadyExists: An error occurred (BucketAlreadyExists) when calling the PutBucketVersioning operation: The requested bucket name is not available as it already exists."
+                }
+              ]
+            },
+            {
+              "name": "token_claims_trust_policy_test",
+              "label": "token claims trust policy test",
+              "summary": {
+                "total": 3,
+                "passed": 0,
+                "failed": 3,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 3,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_assume_role_with_web_identity",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_with_sub",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_with_azp",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "token_principal_tag_role_policy_test",
+              "label": "token principal tag role policy test",
+              "summary": {
+                "total": 3,
+                "passed": 0,
+                "failed": 3,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 3,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_assume_role_with_web_identity_with_principal_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_for_all_values",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_for_all_values_deny",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "token_tag_keys_test",
+              "label": "token tag keys test",
+              "summary": {
+                "total": 2,
+                "passed": 0,
+                "failed": 2,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 2,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_assume_role_with_web_identity_tag_keys_trust_policy",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                },
+                {
+                  "name": "test_assume_role_with_web_identity_tag_keys_role_policy",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "token_request_tag_trust_policy_test",
+              "label": "token request tag trust policy test",
+              "summary": {
+                "total": 1,
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 1,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_assume_role_with_web_identity_with_request_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "token_role_tags_test",
+              "label": "token role tags test",
+              "summary": {
+                "total": 1,
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 1,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "test_assume_role_with_web_identity_role_resource_tag",
+                  "status": "fail",
+                  "message": "RuntimeError: Your config file is missing the \"webidentity\" section!"
+                }
+              ]
+            },
+            {
+              "name": "utils",
+              "label": "utils",
+              "summary": {
+                "total": 1,
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 1,
+                "compatibility_rate": 1.0
+              },
+              "examples": []
+            },
+            {
+              "name": "group",
+              "label": "group",
+              "summary": {
+                "total": 4,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 4,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_account_group_create",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_group_case_insensitive_name",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_group_list",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_group_update",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            },
+            {
+              "name": "group_policy",
+              "label": "group policy",
+              "summary": {
+                "total": 4,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 4,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_account_inline_group_policy",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_managed_group_policy",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_inline_group_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_managed_group_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            },
+            {
+              "name": "iam",
+              "label": "iam",
+              "summary": {
+                "total": 2,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 2,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_verify_add_existing_client_id_to_oidc",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_verify_update_thumbprintlist_of_oidc",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            },
+            {
+              "name": "iam_account",
+              "label": "iam account",
+              "summary": {
+                "total": 65,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 65,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_account_user_create",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_case_insensitive_name",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_delete",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_list",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_list_path_prefix",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_update_name",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_update_path",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_access_key_create",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_current_user_access_key_create",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_access_key_update",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_current_user_access_key_update",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_access_key_delete",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            },
+            {
+              "name": "iam_cross_account",
+              "label": "iam cross account",
+              "summary": {
+                "total": 19,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 19,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_same_account_role_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_role_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy_allow_create_bucket",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy_allow_get_role",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_bucket_user_policy_allow_user_arn",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_user_bucket_policy_allow_user_arn",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_user_bucket_policy_allow_account_arn",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_bucket_user_policy_allow_account_arn",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_user_bucket_policy_allow_account_id",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_bucket_user_policy_allow_account_id",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_bucket_acl_user_policy_grant_canonical_id",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_user_policy_bucket_acl_grant_canonical_id",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            },
+            {
+              "name": "iam_role",
+              "label": "iam role",
+              "summary": {
+                "total": 13,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 13,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_account_role_create",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_case_insensitive_name",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_delete",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_list",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_list_path_prefix",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_update",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_list_permission",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_same_account_role_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_role_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy_allow_create_bucket",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            },
+            {
+              "name": "iam_user",
+              "label": "iam user",
+              "summary": {
+                "total": 17,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 17,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_account_user_create",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_case_insensitive_name",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_delete",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_list",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_list_path_prefix",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_update_name",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_update_path",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_access_key_create",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_current_user_access_key_create",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_access_key_update",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_current_user_access_key_update",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_user_access_key_delete",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            },
+            {
+              "name": "lifecycle_transition",
+              "label": "lifecycle transition",
+              "summary": {
+                "total": 2,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 2,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_lifecycle_set_noncurrent_transition",
+                  "status": "skipped",
+                  "message": "requires 3 or more storage classes"
+                },
+                {
+                  "name": "test_lifecycle_plain_null_version_current_transition",
+                  "status": "skipped",
+                  "message": "requires 2 or more storage classes"
+                }
+              ]
+            },
+            {
+              "name": "role_policy",
+              "label": "role policy",
+              "summary": {
+                "total": 7,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 7,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_account_role_policy",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy_managed",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_same_account_role_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_role_policy_allow",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy_allow_create_bucket",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_role_policy_allow_get_role",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            },
+            {
+              "name": "sns",
+              "label": "sns",
+              "summary": {
+                "total": 4,
+                "passed": 0,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 4,
+                "eligible": 0,
+                "compatibility_rate": null
+              },
+              "examples": [
+                {
+                  "name": "test_account_topic",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_topic",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_account_topic_publish",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                },
+                {
+                  "name": "test_cross_account_topic_publish",
+                  "status": "skipped",
+                  "message": "[iam root] user does not belong to an account"
+                }
+              ]
+            }
+          ]
+        },
+        "mint": {
+          "label": "mint",
+          "status": "completed",
+          "summary": {
+            "total": 46,
+            "passed": 38,
+            "failed": 8,
+            "errored": 0,
+            "skipped": 0,
+            "eligible": 46,
+            "compatibility_rate": 0.8261
+          },
+          "feature_summaries": [
+            {
+              "name": "aws-sdk-php",
+              "label": "aws-sdk-php",
+              "summary": {
+                "total": 12,
+                "passed": 11,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 12,
+                "compatibility_rate": 0.9167
+              },
+              "examples": [
+                {
+                  "name": "abortMultipartupload ( array $params = [] )",
+                  "status": "fail",
+                  "message": ""
+                }
+              ]
+            },
+            {
+              "name": "aws-sdk-ruby",
+              "label": "aws-sdk-ruby",
+              "summary": {
+                "total": 12,
+                "passed": 11,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 12,
+                "compatibility_rate": 0.9167
+              },
+              "examples": [
+                {
+                  "name": "presignedPut(bucket_name,file_name)",
+                  "status": "fail",
+                  "message": ""
+                }
+              ]
+            },
+            {
+              "name": "awscli",
+              "label": "awscli",
+              "summary": {
+                "total": 11,
+                "passed": 10,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 11,
+                "compatibility_rate": 0.9091
+              },
+              "examples": [
+                {
+                  "name": "aws --endpoint-url http://127.0.0.1:9878 s3 presign s3://awscli-mint-test-bucket-9319/datafile-1-kB\n",
+                  "status": "fail",
+                  "message": ""
+                }
+              ]
+            },
+            {
+              "name": "minio-java",
+              "label": "minio-java",
+              "summary": {
+                "total": 5,
+                "passed": 4,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 5,
+                "compatibility_rate": 0.8
+              },
+              "examples": [
+                {
+                  "name": "setBucketVersioning()",
+                  "status": "fail",
+                  "message": ""
+                }
+              ]
+            },
+            {
+              "name": "mc",
+              "label": "mc",
+              "summary": {
+                "total": 3,
+                "passed": 2,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 3,
+                "compatibility_rate": 0.6667
+              },
+              "examples": [
+                {
+                  "name": "test_rb",
+                  "status": "fail",
+                  "message": ""
+                }
+              ]
+            },
+            {
+              "name": "aws-sdk-go-v2",
+              "label": "aws-sdk-go-v2",
+              "summary": {
+                "total": 1,
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 1,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "testBasicObjectOperations",
+                  "status": "fail",
+                  "message": "AWS SDK Go V2 HeadObject ContentType mismatch: expected 'text/plain', got 'binary/octet-stream'"
+                }
+              ]
+            },
+            {
+              "name": "healthcheck",
+              "label": "healthcheck",
+              "summary": {
+                "total": 1,
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 1,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "testLivenessEndpoint",
+                  "status": "fail",
+                  "message": "GET /minio/health/live returned 403 Forbidden"
+                }
+              ]
+            },
+            {
+              "name": "minio-go: testFunctional",
+              "label": "minio-go: testFunctional",
+              "summary": {
+                "total": 1,
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0,
+                "eligible": 1,
+                "compatibility_rate": 0.0
+              },
+              "examples": [
+                {
+                  "name": "GetBucketPolicy(ctx, bucketName)",
+                  "status": "fail",
+                  "message": "policy should be set to nil"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
     {
       "id": "2026-04-08T04-45-25Z",
       "status": "completed",
@@ -34449,6 +36989,12 @@
           "started_at": "2026-04-08T04:45:25Z",
           "rate": 0.2628,
           "eligible": 742
+        },
+        {
+          "run_id": "2026-04-09T04-42-10Z",
+          "started_at": "2026-04-09T04:42:10Z",
+          "rate": 0.2628,
+          "eligible": 742
         }
       ],
       "mint": [
@@ -34551,6 +37097,12 @@
         {
           "run_id": "2026-04-08T04-45-25Z",
           "started_at": "2026-04-08T04:45:25Z",
+          "rate": 0.8261,
+          "eligible": 46
+        },
+        {
+          "run_id": "2026-04-09T04-42-10Z",
+          "started_at": "2026-04-09T04:42:10Z",
           "rate": 0.8261,
           "eligible": 46
         }
@@ -34728,6 +37280,16 @@
             "failed": 204,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.3544,
+            "eligible": 316,
+            "passed": 112,
+            "failed": 204,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "encryption": [
@@ -34854,6 +37416,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.1019,
+            "eligible": 108,
+            "passed": 11,
+            "failed": 97,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.1019,
             "eligible": 108,
             "passed": 11,
@@ -34992,6 +37564,16 @@
             "failed": 45,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 45,
+            "passed": 0,
+            "failed": 45,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "list_objects_v2": [
@@ -35118,6 +37700,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.62,
+            "eligible": 50,
+            "passed": 31,
+            "failed": 19,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.62,
             "eligible": 50,
             "passed": 31,
@@ -35256,6 +37848,16 @@
             "failed": 34,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.2917,
+            "eligible": 48,
+            "passed": 14,
+            "failed": 34,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "bucket_logging": [
@@ -35382,6 +37984,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 6,
+            "passed": 0,
+            "failed": 6,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 6,
             "passed": 0,
@@ -35520,6 +38132,16 @@
             "failed": 21,
             "errored": 0,
             "skipped": 2
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 21,
+            "passed": 0,
+            "failed": 21,
+            "errored": 0,
+            "skipped": 2
           }
         ],
         "s3select": [
@@ -35646,6 +38268,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0588,
+            "eligible": 34,
+            "passed": 2,
+            "failed": 32,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0588,
             "eligible": 34,
             "passed": 2,
@@ -35784,6 +38416,16 @@
             "failed": 19,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.4242,
+            "eligible": 33,
+            "passed": 14,
+            "failed": 19,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "bucket_policy": [
@@ -35910,6 +38552,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 29,
+            "passed": 0,
+            "failed": 29,
+            "errored": 0,
+            "skipped": 2
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 29,
             "passed": 0,
@@ -36048,6 +38700,16 @@
             "failed": 27,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 27,
+            "passed": 0,
+            "failed": 27,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "iam_tenant": [
@@ -36174,6 +38836,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0741,
+            "eligible": 27,
+            "passed": 2,
+            "failed": 25,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0741,
             "eligible": 27,
             "passed": 2,
@@ -36312,6 +38984,16 @@
             "failed": 25,
             "errored": 0,
             "skipped": 3
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0741,
+            "eligible": 27,
+            "passed": 2,
+            "failed": 25,
+            "errored": 0,
+            "skipped": 3
           }
         ],
         "conditional_write": [
@@ -36438,6 +39120,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 7,
+            "passed": 0,
+            "failed": 7,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 7,
             "passed": 0,
@@ -36576,6 +39268,16 @@
             "failed": 17,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.32,
+            "eligible": 25,
+            "passed": 8,
+            "failed": 17,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "lifecycle_expiration": [
@@ -36702,6 +39404,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 6,
+            "passed": 0,
+            "failed": 6,
+            "errored": 0,
+            "skipped": 1
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 6,
             "passed": 0,
@@ -36840,6 +39552,16 @@
             "failed": 21,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 21,
+            "passed": 0,
+            "failed": 21,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "abac_test": [
@@ -36966,6 +39688,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 12,
+            "passed": 0,
+            "failed": 12,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 12,
             "passed": 0,
@@ -37104,6 +39836,16 @@
             "failed": 12,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 12,
+            "passed": 0,
+            "failed": 12,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "session_policy": [
@@ -37230,6 +39972,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 12,
+            "passed": 0,
+            "failed": 12,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 12,
             "passed": 0,
@@ -37368,6 +40120,16 @@
             "failed": 10,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 10,
+            "passed": 0,
+            "failed": 10,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "test_of_sts": [
@@ -37494,6 +40256,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 9,
+            "passed": 0,
+            "failed": 9,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 9,
             "passed": 0,
@@ -37632,6 +40404,16 @@
             "failed": 7,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 7,
+            "passed": 0,
+            "failed": 7,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "token_resource_tags_test": [
@@ -37758,6 +40540,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 5,
+            "passed": 0,
+            "failed": 5,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 5,
             "passed": 0,
@@ -37896,6 +40688,16 @@
             "failed": 4,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "failed": 4,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "token_claims_trust_policy_test": [
@@ -38022,6 +40824,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 3,
+            "passed": 0,
+            "failed": 3,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 3,
             "passed": 0,
@@ -38160,6 +40972,16 @@
             "failed": 3,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 3,
+            "passed": 0,
+            "failed": 3,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "token_tag_keys_test": [
@@ -38286,6 +41108,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 2,
+            "passed": 0,
+            "failed": 2,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 2,
             "passed": 0,
@@ -38424,6 +41256,16 @@
             "failed": 1,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 1,
+            "passed": 0,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "token_role_tags_test": [
@@ -38556,6 +41398,16 @@
             "failed": 1,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 1,
+            "passed": 0,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "utils": [
@@ -38682,6 +41534,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 1.0,
+            "eligible": 1,
+            "passed": 1,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 1.0,
             "eligible": 1,
             "passed": 1,
@@ -38916,6 +41778,16 @@
             "failed": 0,
             "errored": 0,
             "skipped": 4
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 4
           }
         ],
         "group_policy": [
@@ -39042,6 +41914,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 4
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": null,
             "eligible": 0,
             "passed": 0,
@@ -39180,6 +42062,16 @@
             "failed": 0,
             "errored": 0,
             "skipped": 2
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 2
           }
         ],
         "iam_account": [
@@ -39306,6 +42198,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 65
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": null,
             "eligible": 0,
             "passed": 0,
@@ -39444,6 +42346,16 @@
             "failed": 0,
             "errored": 0,
             "skipped": 19
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 19
           }
         ],
         "iam_role": [
@@ -39570,6 +42482,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 13
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": null,
             "eligible": 0,
             "passed": 0,
@@ -39708,6 +42630,16 @@
             "failed": 0,
             "errored": 0,
             "skipped": 17
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 17
           }
         ],
         "lifecycle_transition": [
@@ -39834,6 +42766,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 2
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": null,
             "eligible": 0,
             "passed": 0,
@@ -39972,6 +42914,16 @@
             "failed": 0,
             "errored": 0,
             "skipped": 7
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 7
           }
         ],
         "sns": [
@@ -40098,6 +43050,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": null,
+            "eligible": 0,
+            "passed": 0,
+            "failed": 0,
+            "errored": 0,
+            "skipped": 4
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": null,
             "eligible": 0,
             "passed": 0,
@@ -40278,6 +43240,16 @@
             "failed": 1,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.9091,
+            "eligible": 11,
+            "passed": 10,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "healthcheck": [
@@ -40450,6 +43422,16 @@
             "failed": 1,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 1,
+            "passed": 0,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "aws-sdk-php": [
@@ -40576,6 +43558,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.9167,
+            "eligible": 12,
+            "passed": 11,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.9167,
             "eligible": 12,
             "passed": 11,
@@ -40714,6 +43706,16 @@
             "failed": 1,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.9167,
+            "eligible": 12,
+            "passed": 11,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "minio-java": [
@@ -40840,6 +43842,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.8,
+            "eligible": 5,
+            "passed": 4,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.8,
             "eligible": 5,
             "passed": 4,
@@ -40978,6 +43990,16 @@
             "failed": 1,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.6667,
+            "eligible": 3,
+            "passed": 2,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "aws-sdk-go-v2": [
@@ -41110,6 +44132,16 @@
             "failed": 1,
             "errored": 0,
             "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
+            "rate": 0.0,
+            "eligible": 1,
+            "passed": 0,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
           }
         ],
         "minio-go: testFunctional": [
@@ -41196,6 +44228,16 @@
           {
             "run_id": "2026-04-08T04-45-25Z",
             "started_at": "2026-04-08T04:45:25Z",
+            "rate": 0.0,
+            "eligible": 1,
+            "passed": 0,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
+          },
+          {
+            "run_id": "2026-04-09T04-42-10Z",
+            "started_at": "2026-04-09T04:42:10Z",
             "rate": 0.0,
             "eligible": 1,
             "passed": 0,
