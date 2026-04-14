@@ -19,8 +19,8 @@ Each nightly run does this:
 1. Clone Ozone and reset to the requested ref, default `master`
 2. Build the Ozone dist package
 3. Start the packaged compose cluster from the built artifact
-4. Clone and run `s3-tests`
-5. Clone `mint`, build the required SDK/tool image payload, then run it against the same cluster
+4. Stage `s3-tests` from the pinned repo submodule into `.work`, patch it, then run it
+5. Stage `mint` from the pinned repo submodule into `.work`, patch it, build the required SDK/tool image payload, then run it against the same cluster
 6. Normalize both outputs into one run JSON
 7. Merge the new run into historical data and rebuild the static site
 8. Force-push the rebuilt site and run data to `gh-pages`
@@ -52,12 +52,16 @@ If you only want to publish frontend changes without rebuilding run history, tri
 
 ## Local Run
 
-You can run the orchestration script directly. Override the repo URLs when you want to use local clones.
+Initialize the suite submodules first:
+
+```bash
+git submodule update --init --recursive
+```
+
+You can then run the orchestration script directly against the pinned submodules.
 
 ```bash
 export OZONE_REPO=/Users/lixucheng/Documents/oss/apache/ozone
-export S3_TESTS_REPO=/tmp/ozone-compat-src/s3-tests
-export MINT_REPO=/tmp/ozone-compat-src/mint
 export S3_TESTS_ARGS='s3tests/functional/test_s3.py::test_bucket_list_empty'
 export MINT_TARGETS='healthcheck awscli'
 export OUTPUT_ROOT="$PWD/out/run"
@@ -66,6 +70,13 @@ bash scripts/run-nightly.sh
 npm --prefix site ci
 npm --prefix site run build
 python3 scripts/build_pages.py --output-dir out/pages --new-run out/run/run.json
+```
+
+If you want to stage from different local clones instead of the pinned submodules, set these overrides before `bash scripts/run-nightly.sh`:
+
+```bash
+export S3_TESTS_SOURCE=/tmp/ozone-compat-src/s3-tests
+export MINT_SOURCE=/tmp/ozone-compat-src/mint
 ```
 
 Open `out/pages/index.html` in a local web server after that.
@@ -79,6 +90,8 @@ The workflow exposes `workflow_dispatch` inputs specifically so `nektos/act` can
 Recommended first pass:
 
 ```bash
+git submodule update --init --recursive
+
 ./scripts/build-act-runner.sh
 
 act workflow_dispatch \
@@ -91,6 +104,7 @@ Notes:
 
 - `.actrc` maps `ubuntu-latest` and `ubuntu-24.04` to a local runner image with Docker, Java, Python, Maven, and rsync ready to go.
 - `./scripts/build-act-runner.sh` builds the local `ozone-s3-compatibility/act-runner:latest` image used by `.actrc`.
+- `actions/checkout` now initializes the `s3-tests` and `mint` submodules before the nightly job stages patched copies into `.work`.
 - The full nightly path is heavy. Start with a narrow `s3-tests` selector and a small `mint_targets` list.
 - When `mint_targets` is set, the local Mint image build now installs only those selected SDK/tool targets by default.
 - Publishing is disabled in the sample `act` event file. Turn on `publish_pages` only when you actually want to push `gh-pages`.
