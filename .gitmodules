@@ -1,0 +1,8 @@
+[submodule "s3-tests"]
+	path = s3-tests
+	url = https://github.com/ceph/s3-tests.git
+	branch = master
+[submodule "mint"]
+	path = mint
+	url = https://github.com/minio/mint.git
+	branch = master

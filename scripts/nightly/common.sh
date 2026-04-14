@@ -15,12 +15,14 @@ OZONE_BUILD_ARGS="${OZONE_BUILD_ARGS:--Pdist -Dmaven.javadoc.skip=true -DskipRec
 OZONE_DATANODES="${OZONE_DATANODES:-1}"
 
 S3_TESTS_REPO="${S3_TESTS_REPO:-https://github.com/ceph/s3-tests.git}"
-S3_TESTS_REF="${S3_TESTS_REF:-master}"
+S3_TESTS_SOURCE="${S3_TESTS_SOURCE:-${ROOT_DIR}/s3-tests}"
+S3_TESTS_REF="${S3_TESTS_REF:-submodule}"
 S3_TESTS_ARGS="${S3_TESTS_ARGS:-s3tests/functional}"
 S3_TESTS_MARK_EXPR="${S3_TESTS_MARK_EXPR:-not fails_on_aws}"
 
 MINT_REPO="${MINT_REPO:-https://github.com/minio/mint.git}"
-MINT_REF="${MINT_REF:-master}"
+MINT_SOURCE="${MINT_SOURCE:-${ROOT_DIR}/mint}"
+MINT_REF="${MINT_REF:-submodule}"
 MINT_MODE="${MINT_MODE:-core}"
 MINT_TARGETS="${MINT_TARGETS:-}"
 MINT_TIMEOUT_SECONDS="${MINT_TIMEOUT_SECONDS:-1800}"
@@ -107,6 +109,37 @@ nightly_clone_repo() {
 
   rm -rf "${target_dir}"
   git clone --depth 1 --branch "${repo_ref}" "${repo_url}" "${target_dir}"
+}
+
+nightly_stage_repo() {
+  local source_spec="$1"
+  local repo_ref="$2"
+  local target_dir="$3"
+  local source_commit=""
+
+  rm -rf "${target_dir}"
+
+  if [[ -d "${source_spec}" ]]; then
+    source_commit="$(git -C "${source_spec}" rev-parse HEAD)"
+    git clone --no-local "${source_spec}" "${target_dir}"
+    if [[ -n "${repo_ref}" && "${repo_ref}" != "submodule" ]]; then
+      if git -C "${target_dir}" show-ref --verify --quiet "refs/remotes/origin/${repo_ref}"; then
+        git -C "${target_dir}" checkout --detach "origin/${repo_ref}"
+      else
+        git -C "${target_dir}" fetch --depth 1 origin "${repo_ref}"
+        git -C "${target_dir}" checkout --detach FETCH_HEAD
+      fi
+    else
+      git -C "${target_dir}" checkout --detach "${source_commit}"
+    fi
+    return 0
+  fi
+
+  if [[ -n "${repo_ref}" && "${repo_ref}" != "submodule" ]]; then
+    git clone --depth 1 --branch "${repo_ref}" "${source_spec}" "${target_dir}"
+  else
+    git clone --depth 1 "${source_spec}" "${target_dir}"
+  fi
 }
 
 nightly_run_with_timeout() {

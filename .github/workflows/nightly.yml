@@ -53,10 +53,12 @@ env:
   OZONE_REPO: https://github.com/apache/ozone.git
   OZONE_REF: ${{ inputs.ozone_ref || 'master' }}
   S3_TESTS_REPO: https://github.com/ceph/s3-tests.git
-  S3_TESTS_REF: master
+  S3_TESTS_SOURCE: ${{ github.workspace }}/s3-tests
+  S3_TESTS_REF: submodule
   S3_TESTS_ARGS: ${{ inputs.s3_tests_args || 's3tests/functional' }}
   MINT_REPO: https://github.com/minio/mint.git
-  MINT_REF: master
+  MINT_SOURCE: ${{ github.workspace }}/mint
+  MINT_REF: submodule
   MINT_MODE: ${{ inputs.mint_mode || 'core' }}
   MINT_TARGETS: ${{ inputs.mint_targets || '' }}
   OZONE_DATANODES: ${{ inputs.ozone_datanodes || '1' }}
@@ -72,6 +74,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 1
+          submodules: recursive
 
       - name: Clean generated workspace state
         run: |
