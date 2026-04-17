@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">Apache Ozone S3 Compatibility</title>
-  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, latest run Apr 16, 2026, 6:27 AM UTC.</desc>
+  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, latest run Apr 17, 2026, 6:06 AM UTC.</desc>
 
   <defs>
     <linearGradient id="page" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -46,11 +46,11 @@
   <g font-family="'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="600">
     <g transform="translate(60 456)">
       <rect width="308" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">Apr 16, 2026, 6:27 AM UTC</text>
+      <text x="18" y="25" fill="#12263f">Apr 17, 2026, 6:06 AM UTC</text>
     </g>
     <g transform="translate(382 456)">
       <rect width="184" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">Ozone 29c78e7ac11f</text>
+      <text x="18" y="25" fill="#12263f">Ozone 191c01c346bf</text>
     </g>
   </g>
 
@@ -60,8 +60,8 @@
       <text x="20" y="26" fill="#0f9d71">Full nightly</text>
     </g>
     <g transform="translate(60 510)">
-      <rect width="117" height="40" rx="20" fill="#0f9d71" fill-opacity="0.10" stroke="#0f9d71" stroke-opacity="0.24" />
-      <text x="20" y="26" fill="#0f9d71">completed</text>
+      <rect width="112" height="40" rx="20" fill="#ff8a3d" fill-opacity="0.12" stroke="#ff8a3d" stroke-opacity="0.24" />
+      <text x="20" y="26" fill="#ff8a3d">partial</text>
     </g>
   </g>
 
@@ -79,10 +79,10 @@
     <g transform="translate(690 342)">
       <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
       <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">MINT</text>
-      <text x="24" y="86" font-size="22" font-weight="700">46 eligible cases</text>
-      <text x="24" y="152" font-size="58" font-weight="500">82.6%</text>
-      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">38 passed, 8 failed/error, 0 skipped</text>
-      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.0 pts vs previous</text>
+      <text x="24" y="86" font-size="22" font-weight="700">0 eligible cases</text>
+      <text x="24" y="152" font-size="58" font-weight="500">—</text>
+      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">0 passed, 0 failed/error, 0 skipped</text>
+      <text x="24" y="216" font-size="18" font-weight="800" fill="#60758e">No eligible cases</text>
     </g>
   </g>
 </svg>
