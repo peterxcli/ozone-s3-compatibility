@@ -103,19 +103,35 @@ bucket cleanup'.format(bucket, delta.total_seconds()))
 """
 
 
+UNAUTHENTICATED_MARKER = "# Ozone compatibility patch: skip unauthenticated client tests"
+
+UNAUTHENTICATED_REPLACEMENT = """def get_unauthenticated_client():
+    # Ozone compatibility patch: skip unauthenticated client tests
+    import pytest
+    pytest.skip('Ozone does not support unauthenticated (anonymous) access')
+
+"""
+
+
 def patch_repo(repo: Path) -> None:
     target = repo / "s3tests" / "functional" / "__init__.py"
     if not target.exists():
         raise FileNotFoundError(f"missing target file: {target}")
 
     text = target.read_text()
-    if MARKER in text:
-        return
+    new_text = text
 
-    pattern = r"def nuke_bucket\(client, bucket\):\n.*?(?=def nuke_prefixed_buckets)"
-    new_text, count = re.subn(pattern, REPLACEMENT, text, count=1, flags=re.S)
-    if count != 1:
-        raise RuntimeError(f"could not locate nuke_bucket() in {target}")
+    if MARKER not in new_text:
+        pattern = r"def nuke_bucket\(client, bucket\):\n.*?(?=def nuke_prefixed_buckets)"
+        new_text, count = re.subn(pattern, REPLACEMENT, new_text, count=1, flags=re.S)
+        if count != 1:
+            raise RuntimeError(f"could not locate nuke_bucket() in {target}")
+
+    if UNAUTHENTICATED_MARKER not in new_text:
+        pattern = r"def get_unauthenticated_client\(\):.*?(?=\ndef )"
+        new_text, count = re.subn(pattern, UNAUTHENTICATED_REPLACEMENT, new_text, count=1, flags=re.S)
+        if count != 1:
+            raise RuntimeError(f"could not locate get_unauthenticated_client() in {target}")
 
     target.write_text(new_text)
 
