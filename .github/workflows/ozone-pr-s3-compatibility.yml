@@ -1,0 +1,265 @@
+name: ozone-pr-s3-compatibility
+
+run-name: Ozone PR #${{ github.event.client_payload.pr_number || inputs.ozone_pr_number || 'unknown' }} @ ${{ github.event.client_payload.head_sha_short || inputs.ozone_head_sha_short || 'resolving' }}
+
+on:
+  repository_dispatch:
+    types:
+      - ozone-pr-s3-compatibility
+  workflow_dispatch:
+    inputs:
+      ozone_owner:
+        description: "Ozone repository owner"
+        required: false
+        default: "apache"
+        type: string
+      ozone_repo_name:
+        description: "Ozone repository name"
+        required: false
+        default: "ozone"
+        type: string
+      ozone_pr_number:
+        description: "Ozone pull request number to test"
+        required: true
+        type: string
+      ozone_head_sha_short:
+        description: "Optional Ozone PR head short SHA for the workflow run title"
+        required: false
+        default: ""
+        type: string
+      s3_tests_args:
+        description: "pytest selection for s3-tests"
+        required: false
+        default: "s3tests/functional"
+        type: string
+      mint_mode:
+        description: "Mint mode"
+        required: false
+        default: "core"
+        type: choice
+        options:
+          - core
+          - full
+      mint_targets:
+        description: "Optional Mint SDK targets, space separated"
+        required: false
+        default: ""
+        type: string
+      ozone_datanodes:
+        description: "Number of Ozone datanodes to start"
+        required: false
+        default: "1"
+        type: string
+      post_comment:
+        description: "Post the comparison back to the Ozone PR"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ozone-pr-s3-compatibility-${{ github.event.client_payload.pr_number || inputs.ozone_pr_number || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  OUTPUT_ROOT: ${{ github.workspace }}/out/pr-run
+  WORK_DIR: ${{ github.workspace }}/.work
+  PUBLISH_PAGES: false
+  OZONE_OWNER_INPUT: ${{ github.event.client_payload.ozone_owner || inputs.ozone_owner || 'apache' }}
+  OZONE_REPO_NAME_INPUT: ${{ github.event.client_payload.ozone_repo_name || inputs.ozone_repo_name || 'ozone' }}
+  OZONE_PR_NUMBER_INPUT: ${{ github.event.client_payload.pr_number || inputs.ozone_pr_number || '' }}
+  TRIGGER_COMMENT_URL_INPUT: ${{ github.event.client_payload.comment_url || '' }}
+  TRIGGER_COMMENT_ID_INPUT: ${{ github.event.client_payload.comment_id || '' }}
+  REQUESTED_BY_INPUT: ${{ github.event.client_payload.requested_by || github.actor }}
+  POST_COMMENT_INPUT: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.post_comment) || format('{0}', github.event.client_payload.post_comment) }}
+  S3_TESTS_ARGS_INPUT: ${{ github.event.client_payload.s3_tests_args || inputs.s3_tests_args || 's3tests/functional' }}
+  MINT_MODE_INPUT: ${{ github.event.client_payload.mint_mode || inputs.mint_mode || 'core' }}
+  MINT_TARGETS_INPUT: ${{ github.event.client_payload.mint_targets || inputs.mint_targets || '' }}
+  OZONE_DATANODES_INPUT: ${{ github.event.client_payload.ozone_datanodes || inputs.ozone_datanodes || '1' }}
+
+jobs:
+  pr-s3-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Clean generated workspace state
+        run: |
+          rm -rf .pages-repo out/pr-run .work
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install workflow dependencies
+        run: |
+          set -euo pipefail
+          missing=()
+          command -v jq >/dev/null 2>&1 || missing+=("jq")
+          command -v mvn >/dev/null 2>&1 || missing+=("maven")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            sudo apt-get update
+            sudo apt-get install -y "${missing[@]}"
+          fi
+          gh --version | head -n 1
+          mvn -version | head -n 2
+          docker compose version || docker-compose --version
+
+      - name: Resolve Ozone PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${OZONE_PR_NUMBER_INPUT}" ]; then
+            echo "Missing Ozone PR number. Provide workflow_dispatch input ozone_pr_number or repository_dispatch client_payload.pr_number." >&2
+            exit 1
+          fi
+
+          pr_json="$(gh api "repos/${OZONE_OWNER_INPUT}/${OZONE_REPO_NAME_INPUT}/pulls/${OZONE_PR_NUMBER_INPUT}")"
+          head_repo="$(jq -r '.head.repo.clone_url' <<< "${pr_json}")"
+          head_ref="$(jq -r '.head.ref' <<< "${pr_json}")"
+          head_sha="$(jq -r '.head.sha' <<< "${pr_json}")"
+          pr_url="$(jq -r '.html_url' <<< "${pr_json}")"
+          short_sha="${head_sha:0:12}"
+
+          {
+            echo "OZONE_OWNER=${OZONE_OWNER_INPUT}"
+            echo "OZONE_REPO_NAME=${OZONE_REPO_NAME_INPUT}"
+            echo "OZONE_PR_NUMBER=${OZONE_PR_NUMBER_INPUT}"
+            echo "OZONE_PR_URL=${pr_url}"
+            echo "TRIGGER_COMMENT_URL=${TRIGGER_COMMENT_URL_INPUT}"
+            echo "TRIGGER_COMMENT_ID=${TRIGGER_COMMENT_ID_INPUT}"
+            echo "REQUESTED_BY=${REQUESTED_BY_INPUT}"
+            echo "RUN_ID=pr-${OZONE_PR_NUMBER_INPUT}-${short_sha}-${GITHUB_RUN_ID}"
+            echo "OZONE_REPO=${head_repo}"
+            echo "OZONE_REF=${head_ref}"
+            echo "S3_TESTS_ARGS=${S3_TESTS_ARGS_INPUT}"
+            echo "S3_TESTS_INCLUDE_ALL_CASES=true"
+            echo "MINT_MODE=${MINT_MODE_INPUT}"
+            echo "MINT_TARGETS=${MINT_TARGETS_INPUT}"
+            echo "OZONE_DATANODES=${OZONE_DATANODES_INPUT}"
+          } >> "${GITHUB_ENV}"
+
+          {
+            echo "pr_url=${pr_url}"
+            echo "head_repo=${head_repo}"
+            echo "head_ref=${head_ref}"
+            echo "head_sha=${head_sha}"
+            echo "short_sha=${short_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+          echo "Resolved ${OZONE_OWNER_INPUT}/${OZONE_REPO_NAME_INPUT}#${OZONE_PR_NUMBER_INPUT} to ${head_repo}@${head_ref} (${short_sha})"
+
+      - name: Prepare latest published baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .pages-repo/data/runs
+          remote_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "${remote_url}" gh-pages >/dev/null 2>&1; then
+            rm -rf .pages-repo
+            git clone --depth 1 --branch gh-pages "${remote_url}" .pages-repo
+          else
+            echo "No gh-pages branch found; comparison will run without a baseline."
+          fi
+
+      - name: Initialize PR run context
+        run: bash scripts/nightly/init.sh
+
+      - name: Clone and patch upstream suites
+        run: bash scripts/nightly/clone_sources.sh
+
+      - name: Build Ozone distribution
+        run: bash scripts/nightly/build_ozone.sh
+
+      - name: Start Ozone cluster
+        id: start_cluster
+        run: bash scripts/nightly/start_cluster.sh
+
+      - name: Run s3-tests
+        if: ${{ steps.start_cluster.outcome == 'success' }}
+        run: bash scripts/nightly/run_s3_tests.sh
+
+      - name: Run Mint
+        if: ${{ steps.start_cluster.outcome == 'success' }}
+        run: bash scripts/nightly/run_mint.sh
+
+      - name: Stop Ozone cluster
+        if: ${{ always() && hashFiles('out/pr-run/state/exports.env') != '' }}
+        run: bash scripts/nightly/stop_cluster.sh
+
+      - name: Normalize PR run
+        if: ${{ always() && hashFiles('out/pr-run/state/exports.env') != '' }}
+        run: bash scripts/nightly/normalize_run.sh
+
+      - name: Compare with latest published main run
+        if: ${{ always() && hashFiles('out/pr-run/run.json') != '' }}
+        run: |
+          set -euo pipefail
+          python3 scripts/compare_runs.py \
+            --candidate out/pr-run/run.json \
+            --baseline-runs-dir .pages-repo/data/runs \
+            --output out/pr-run/pr-comment.md \
+            --pr-url "${OZONE_PR_URL}" \
+            --trigger-comment-url "${TRIGGER_COMMENT_URL}"
+
+      - name: Publish comparison summary
+        if: ${{ always() && hashFiles('out/pr-run/pr-comment.md') != '' }}
+        run: |
+          set -euo pipefail
+          {
+            echo "# Ozone PR S3 compatibility"
+            echo
+            cat out/pr-run/pr-comment.md
+          } >> "${GITHUB_STEP_SUMMARY}"
+          cat out/pr-run/pr-comment.md
+
+      - name: Post result comment
+        if: ${{ always() && hashFiles('out/pr-run/pr-comment.md') != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.OZONE_PR_COMMENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          post_comment="${POST_COMMENT_INPUT:-true}"
+          if [ "${post_comment}" = "false" ]; then
+            echo "post_comment is false; leaving markdown in the workflow artifact."
+            exit 0
+          fi
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "Missing OZONE_PR_COMMENT_TOKEN; leaving markdown in the workflow artifact."
+            cat out/pr-run/pr-comment.md
+            exit 0
+          fi
+
+          jq -n --rawfile body out/pr-run/pr-comment.md '{body: $body}' > out/pr-run/comment-payload.json
+          gh api \
+            --method POST \
+            "repos/${OZONE_OWNER}/${OZONE_REPO_NAME}/issues/${OZONE_PR_NUMBER}/comments" \
+            --input out/pr-run/comment-payload.json
+
+      - name: Upload PR run artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ozone-pr-s3-compatibility-${{ env.OZONE_PR_NUMBER || github.run_id }}
+          path: out/pr-run
+          if-no-files-found: warn

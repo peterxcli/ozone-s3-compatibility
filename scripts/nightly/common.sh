@@ -19,6 +19,7 @@ S3_TESTS_SOURCE="${S3_TESTS_SOURCE:-${ROOT_DIR}/s3-tests}"
 S3_TESTS_REF="${S3_TESTS_REF:-submodule}"
 S3_TESTS_ARGS="${S3_TESTS_ARGS:-s3tests/functional}"
 S3_TESTS_MARK_EXPR="${S3_TESTS_MARK_EXPR:-not fails_on_aws and not auth_aws2}"
+S3_TESTS_INCLUDE_ALL_CASES="${S3_TESTS_INCLUDE_ALL_CASES:-false}"
 
 MINT_REPO="${MINT_REPO:-https://github.com/minio/mint.git}"
 MINT_SOURCE="${MINT_SOURCE:-${ROOT_DIR}/mint}"
@@ -106,9 +107,30 @@ nightly_clone_repo() {
   local repo_url="$1"
   local repo_ref="$2"
   local target_dir="$3"
+  local refspec=""
+  local -a refspecs=()
 
   rm -rf "${target_dir}"
-  git clone --depth 1 --branch "${repo_ref}" "${repo_url}" "${target_dir}"
+  git init "${target_dir}"
+  git -C "${target_dir}" remote add origin "${repo_url}"
+
+  refspecs=("${repo_ref}")
+  if [[ "${repo_ref}" != refs/* ]]; then
+    refspecs+=("refs/heads/${repo_ref}" "refs/tags/${repo_ref}")
+  fi
+  if [[ "${repo_ref}" == pull/* ]]; then
+    refspecs+=("refs/${repo_ref}")
+  fi
+
+  for refspec in "${refspecs[@]}"; do
+    if git -C "${target_dir}" fetch --depth 1 origin "${refspec}"; then
+      git -C "${target_dir}" checkout --detach FETCH_HEAD
+      return 0
+    fi
+  done
+
+  nightly_log "Could not fetch ${repo_ref} from ${repo_url}"
+  return 1
 }
 
 nightly_stage_repo() {
