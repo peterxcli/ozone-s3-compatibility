@@ -12,6 +12,11 @@ if [[ -n "${GITHUB_SERVER_URL:-}" && -n "${GITHUB_REPOSITORY:-}" && -n "${GITHUB
 fi
 
 nightly_log "Normalizing run outputs"
+normalize_args=()
+if [[ "${S3_TESTS_INCLUDE_ALL_CASES}" == "true" ]]; then
+  normalize_args+=("--s3-tests-include-all-cases")
+fi
+
 python3 "${ROOT_DIR}/scripts/normalize_run.py" \
   --out "${RUN_DIR}/run.json" \
   --run-id "${RUN_ID}" \
@@ -38,4 +43,5 @@ python3 "${ROOT_DIR}/scripts/normalize_run.py" \
   --mint-exit "${MINT_EXIT}" \
   --mint-mode "${MINT_MODE}" \
   --mint-targets "${MINT_TARGETS}" \
-  --ozone-datanodes "${OZONE_DATANODES}"
+  --ozone-datanodes "${OZONE_DATANODES}" \
+  "${normalize_args[@]}"

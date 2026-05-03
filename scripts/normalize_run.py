@@ -46,6 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--s3-tests-junit", required=True)
     parser.add_argument("--s3-tests-exit", type=int, default=0)
     parser.add_argument("--s3-tests-args", default="s3tests/functional")
+    parser.add_argument("--s3-tests-include-all-cases", action="store_true")
     parser.add_argument("--mint-repo", required=True)
     parser.add_argument("--mint-ref", required=True)
     parser.add_argument("--mint-commit", required=True)
@@ -240,6 +241,7 @@ def build_feature_summaries(cases: list[dict[str, Any]]) -> list[dict[str, Any]]
 def normalize_s3_suite(args: argparse.Namespace) -> dict[str, Any]:
     cases = parse_junit_cases(Path(args.s3_tests_junit))
     markers_index = collect_s3_markers(Path(args.s3_tests_source))
+    include_all_cases = bool(getattr(args, "s3_tests_include_all_cases", False))
 
     for case in cases:
         exact_key = f'{case["classname"]}::{case["name_base"]}'
@@ -269,16 +271,30 @@ def normalize_s3_suite(args: argparse.Namespace) -> dict[str, Any]:
         if case["status"] != "pass"
     ]
 
-    return {
+    suite = {
         "key": "s3_tests",
         "label": "s3-tests",
         "status": suite_status,
         "exit_code": args.s3_tests_exit,
         "summary": summarize_cases(cases),
         "feature_summaries": build_feature_summaries(cases),
-        "included_case_strategy": "non_passing_only",
+        "included_case_strategy": "all" if include_all_cases else "non_passing_only",
         "non_passing_cases": non_passing_cases,
     }
+    if include_all_cases:
+        suite["cases"] = [
+            {
+                "name": case["name"],
+                "classname": case["classname"],
+                "features": case["features"],
+                "status": case["status"],
+                "duration_ms": case["duration_ms"],
+                "message": case["message"],
+                "detail": case["detail"],
+            }
+            for case in cases
+        ]
+    return suite
 
 
 def normalize_mint_status(raw_status: str) -> str:
@@ -436,6 +452,7 @@ def main() -> None:
         },
         "execution": {
             "s3_tests_args": args.s3_tests_args,
+            "s3_tests_include_all_cases": bool(getattr(args, "s3_tests_include_all_cases", False)),
             "mint_mode": args.mint_mode,
             "mint_targets": [target for target in args.mint_targets.split() if target],
             "ozone_datanodes": args.ozone_datanodes,
