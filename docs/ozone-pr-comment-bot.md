@@ -105,3 +105,29 @@ jobs:
 ## Manual Run
 
 Use the `ozone-pr-s3-compatibility` workflow dispatch form and provide the Ozone PR number. Manual runs use the same comparison and artifact behavior, and can skip posting by setting `post_comment` to `false`.
+
+## Agent-Assisted Fixing
+
+This repo includes an agent skill at:
+
+```text
+.agents/skills/ozone-s3-compat-failure-fixer
+```
+
+Use it from an Ozone checkout when you want the agent to inspect the compatibility artifact and guide or implement a fix for a failing S3 feature. If your agent does not auto-discover repo-carried skills, copy or symlink that folder into your global skills directory, for example `~/.agents/skills/`.
+
+Typical prompt from the Ozone PR checkout:
+
+```text
+Use ozone-s3-compat-failure-fixer to inspect the latest /s3-compat result for this PR, focus on the bucket listing failures, and fix the Ozone code.
+```
+
+The skill's helper script can also be run directly:
+
+```bash
+python /path/to/ozone-s3-compatibility/.agents/skills/ozone-s3-compat-failure-fixer/scripts/fetch_s3_compat_run.py \
+  --pr-number "$(gh pr view --json number --jq .number)" \
+  --commit "$(git rev-parse --short=12 HEAD)" \
+  --feature bucket \
+  --download-dir /tmp/ozone-s3-compat
+```

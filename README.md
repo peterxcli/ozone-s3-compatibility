@@ -33,6 +33,7 @@ The PR comment flow is separate. A comment listener on the Ozone PR sends `repos
 - `.github/workflows/nightly.yml`: scheduled workflow and manual/`act` entrypoint
 - `.github/workflows/ozone-pr-s3-compatibility.yml`: repository-dispatch/manual workflow for Ozone PR comment-triggered checks
 - `.github/workflows/refresh-pages-ui.yml`: manual workflow that builds the Vue frontend and updates only the published UI assets on `gh-pages`
+- `.agents/skills/ozone-s3-compat-failure-fixer`: repo-carried agent skill for inspecting PR compatibility artifacts from an Ozone checkout
 - [`scripts/run-nightly.sh`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/run-nightly.sh): orchestration for clone/build/start/run
 - [`scripts/normalize_run.py`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/normalize_run.py): converts raw outputs into a report-friendly JSON model
 - [`scripts/build_pages.py`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/scripts/build_pages.py): rebuilds the static Pages site from historical run JSON files
@@ -51,6 +52,7 @@ The PR comment flow is separate. A comment listener on the Ozone PR sends `repos
 The workflow handles branch creation itself if `gh-pages` does not exist yet.
 If you only want to publish frontend changes without rebuilding run history, trigger `refresh-pages-ui`. It builds the Vue app, updates the published UI files on `gh-pages`, and leaves `data/` untouched.
 For `/s3-compat` comments on Ozone PRs, install a comment forwarder in the Ozone repository or a GitHub App that sends `repository_dispatch` to this repo. See [`docs/ozone-pr-comment-bot.md`](/Users/lixucheng/Documents/small-project/ozone-s3-compatibility/docs/ozone-pr-comment-bot.md).
+For agent-assisted fixing from an Ozone checkout, install or reference the bundled `ozone-s3-compat-failure-fixer` skill and use it to download the PR artifact, summarize failing cases, inspect raw logs, and guide the Ozone-side fix.
 
 ## Publish Paths
 
