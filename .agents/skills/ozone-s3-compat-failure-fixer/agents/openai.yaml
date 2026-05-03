@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ozone S3 Compat Failure Fixer"
+  short_description: "Inspect Ozone S3 compatibility PR artifacts and guide fixes."
+  default_prompt: "Inspect the latest Ozone S3 compatibility failures for this PR and identify the code changes needed to fix them."

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -224,6 +226,97 @@ class WorkflowDisplayTests(unittest.TestCase):
         self.assertIn("Publish comparison summary", workflow)
         self.assertIn("GITHUB_STEP_SUMMARY", workflow)
         self.assertIn("cat out/pr-run/pr-comment.md", workflow)
+
+
+class OzoneFailureFixerSkillTests(unittest.TestCase):
+    def test_skill_document_has_actionable_ozone_failure_workflow(self) -> None:
+        skill_path = ROOT / ".agents" / "skills" / "ozone-s3-compat-failure-fixer" / "SKILL.md"
+        skill = skill_path.read_text(encoding="utf-8")
+
+        self.assertNotIn("TODO", skill)
+        self.assertIn("Use when", skill)
+        self.assertIn("fetch_s3_compat_run.py", skill)
+        self.assertIn("Ozone checkout", skill)
+        self.assertIn("Do not fix from the comparison summary alone", skill)
+
+    def test_helper_script_summarizes_feature_failures_from_artifact_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_dir = Path(tmp_dir)
+            (artifact_dir / "pr-comment.md").write_text(
+                "## Apache Ozone S3 compatibility result\n\n**New non-passing cases**\n",
+                encoding="utf-8",
+            )
+            (artifact_dir / "run.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": "pr-42-abcdef123456",
+                        "status": "completed",
+                        "workflow_run_url": "https://github.com/example/actions/runs/42",
+                        "sources": {"ozone": {"ref": "feature/s3", "short_commit": "abcdef123456"}},
+                        "suites": {
+                            "s3_tests": {
+                                "label": "s3-tests",
+                                "summary": suite_summary(passed=1, failed=1),
+                                "cases": [
+                                    {
+                                        "classname": "s3tests.functional.test_bucket",
+                                        "name": "test_bucket_list_v2",
+                                        "features": ["bucket"],
+                                        "status": "fail",
+                                        "message": "expected CommonPrefixes",
+                                        "detail": "traceback",
+                                    },
+                                    {
+                                        "classname": "s3tests.functional.test_object",
+                                        "name": "test_object_get",
+                                        "features": ["object"],
+                                        "status": "pass",
+                                        "message": "",
+                                    },
+                                ],
+                                "non_passing_cases": [
+                                    {
+                                        "classname": "s3tests.functional.test_bucket",
+                                        "name": "test_bucket_list_v2",
+                                        "features": ["bucket"],
+                                        "status": "fail",
+                                        "message": "expected CommonPrefixes",
+                                        "detail": "traceback",
+                                    }
+                                ],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(
+                        ROOT
+                        / ".agents"
+                        / "skills"
+                        / "ozone-s3-compat-failure-fixer"
+                        / "scripts"
+                        / "fetch_s3_compat_run.py"
+                    ),
+                    "--artifact-dir",
+                    str(artifact_dir),
+                    "--feature",
+                    "bucket",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual("", result.stderr)
+        self.assertEqual(0, result.returncode)
+        self.assertIn("test_bucket_list_v2", result.stdout)
+        self.assertIn("expected CommonPrefixes", result.stdout)
+        self.assertIn("Repair workflow", result.stdout)
 
 
 if __name__ == "__main__":
