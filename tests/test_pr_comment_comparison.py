@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -15,6 +17,24 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import normalize_run  # noqa: E402
 import compare_runs  # noqa: E402
+
+HELPER_PATH = (
+    ROOT
+    / ".agents"
+    / "skills"
+    / "ozone-s3-compat-failure-fixer"
+    / "scripts"
+    / "fetch_s3_compat_run.py"
+)
+
+
+def load_failure_fixer_helper():
+    spec = importlib.util.spec_from_file_location("fetch_s3_compat_run", HELPER_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load {HELPER_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def suite_summary(passed: int, failed: int, errored: int = 0, skipped: int = 0) -> dict[str, int | float]:
@@ -294,14 +314,7 @@ class OzoneFailureFixerSkillTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     sys.executable,
-                    str(
-                        ROOT
-                        / ".agents"
-                        / "skills"
-                        / "ozone-s3-compat-failure-fixer"
-                        / "scripts"
-                        / "fetch_s3_compat_run.py"
-                    ),
+                    str(HELPER_PATH),
                     "--artifact-dir",
                     str(artifact_dir),
                     "--feature",
@@ -317,6 +330,44 @@ class OzoneFailureFixerSkillTests(unittest.TestCase):
         self.assertIn("test_bucket_list_v2", result.stdout)
         self.assertIn("expected CommonPrefixes", result.stdout)
         self.assertIn("Repair workflow", result.stdout)
+
+    def test_helper_uses_exact_pr_number_matching(self) -> None:
+        helper = load_failure_fixer_helper()
+
+        self.assertFalse(helper.run_matches({"displayTitle": "Ozone PR #10 @ abcdef123456"}, "1", ""))
+        self.assertTrue(helper.run_matches({"displayTitle": "Ozone PR #1 @ abcdef123456"}, "1", ""))
+
+    def test_helper_refuses_to_delete_non_empty_custom_download_directory(self) -> None:
+        helper = load_failure_fixer_helper()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            download_dir = Path(tmp_dir)
+            marker = download_dir / "keep.txt"
+            marker.write_text("do not delete", encoding="utf-8")
+
+            with self.assertRaises(helper.CommandError):
+                helper.download_artifact("owner/repo", "123", "9", download_dir)
+
+            self.assertTrue(marker.exists())
+
+    def test_download_artifact_retries_with_custom_exception(self) -> None:
+        helper = load_failure_fixer_helper()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            download_dir = Path(tmp_dir) / "empty"
+            download_dir.mkdir()
+            calls: list[list[str]] = []
+
+            def fake_run_command(command: list[str]) -> str:
+                calls.append(command)
+                if "--name" in command:
+                    raise helper.CommandError("artifact not found")
+                return ""
+
+            with mock.patch.object(helper, "run_command", side_effect=fake_run_command):
+                helper.download_artifact("owner/repo", "123", "9", download_dir)
+
+        self.assertEqual(2, len(calls))
+        self.assertIn("--name", calls[0])
+        self.assertNotIn("--name", calls[1])
 
 
 if __name__ == "__main__":

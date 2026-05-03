@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,8 +14,13 @@ from typing import Any
 
 
 DEFAULT_COMPAT_REPO = "peterxcli/ozone-s3-compatibility"
+DEFAULT_DOWNLOAD_DIR = Path("/tmp/ozone-s3-compat")
 WORKFLOW_FILE = "ozone-pr-s3-compatibility.yml"
 NON_PASSING = {"fail", "error", "skipped", "not_run"}
+
+
+class CommandError(RuntimeError):
+    """Raised when a recoverable command or artifact operation fails."""
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--commit", default="", help="Ozone PR short or full commit SHA used to disambiguate run title")
     parser.add_argument("--run-id", default="", help="GitHub Actions run database id")
     parser.add_argument("--artifact-dir", default="", help="Already downloaded compatibility artifact directory")
-    parser.add_argument("--download-dir", default="/tmp/ozone-s3-compat", help="Where to download artifacts")
+    parser.add_argument("--download-dir", default=str(DEFAULT_DOWNLOAD_DIR), help="Where to download artifacts")
     parser.add_argument("--feature", default="", help="Filter failures by feature/name/class/message substring")
     parser.add_argument("--max-cases", type=int, default=30)
     return parser.parse_args()
@@ -34,12 +40,12 @@ def run_command(command: list[str]) -> str:
     try:
         completed = subprocess.run(command, check=True, text=True, capture_output=True)
     except FileNotFoundError as exc:
-        raise SystemExit(f"Missing required command: {command[0]}") from exc
+        raise CommandError(f"Missing required command: {command[0]}") from exc
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.strip()
         stdout = exc.stdout.strip()
         detail = stderr or stdout or f"exit code {exc.returncode}"
-        raise SystemExit(f"Command failed: {' '.join(command)}\n{detail}") from exc
+        raise CommandError(f"Command failed: {' '.join(command)}\n{detail}") from exc
     return completed.stdout
 
 
@@ -57,7 +63,7 @@ def find_file(root: Path, file_name: str) -> Path | None:
 
 def run_matches(run: dict[str, Any], pr_number: str, commit: str) -> bool:
     title = str(run.get("displayTitle") or "")
-    if pr_number and f"PR #{pr_number}" not in title:
+    if pr_number and not re.search(rf"\bPR\s*#{re.escape(pr_number)}\b", title):
         return False
     if commit and commit[:12] not in title:
         return False
@@ -89,20 +95,43 @@ def find_run_id(compat_repo: str, pr_number: str, commit: str) -> str:
     hint = f" for PR #{pr_number}" if pr_number else ""
     if commit:
         hint += f" at {commit[:12]}"
-    raise SystemExit(f"No {WORKFLOW_FILE} run found{hint} in {compat_repo}")
+    raise CommandError(f"No {WORKFLOW_FILE} run found{hint} in {compat_repo}")
+
+
+def prepare_download_dir(download_dir: Path) -> Path:
+    requested = download_dir.expanduser()
+    resolved = requested.resolve()
+    protected_paths = {
+        Path("/").resolve(),
+        Path.cwd().resolve(),
+        Path.home().resolve(),
+    }
+    if resolved in protected_paths:
+        raise CommandError(f"Refusing to use dangerous download directory: {requested}")
+
+    if requested.exists():
+        if not requested.is_dir():
+            raise CommandError(f"Download path exists and is not a directory: {requested}")
+        if resolved == DEFAULT_DOWNLOAD_DIR.resolve():
+            shutil.rmtree(requested)
+        elif any(requested.iterdir()):
+            raise CommandError(
+                "Refusing to delete non-empty custom download directory: "
+                f"{requested}. Use an empty directory or the default {DEFAULT_DOWNLOAD_DIR}."
+            )
+
+    requested.mkdir(parents=True, exist_ok=True)
+    return requested
 
 
 def download_artifact(compat_repo: str, run_id: str, pr_number: str, download_dir: Path) -> Path:
-    if download_dir.exists():
-        shutil.rmtree(download_dir)
-    download_dir.mkdir(parents=True, exist_ok=True)
-
+    download_dir = prepare_download_dir(download_dir)
     command = ["gh", "run", "download", run_id, "--repo", compat_repo, "--dir", str(download_dir)]
     if pr_number:
         command.extend(["--name", f"ozone-pr-s3-compatibility-{pr_number}"])
     try:
         run_command(command)
-    except SystemExit:
+    except CommandError:
         if pr_number:
             run_command(["gh", "run", "download", run_id, "--repo", compat_repo, "--dir", str(download_dir)])
         else:
@@ -161,7 +190,7 @@ def format_summary_counts(summary: dict[str, Any]) -> str:
 def render_summary(artifact_dir: Path, feature: str, max_cases: int) -> str:
     run_path = find_file(artifact_dir, "run.json")
     if not run_path:
-        raise SystemExit(f"Could not find run.json under {artifact_dir}")
+        raise CommandError(f"Could not find run.json under {artifact_dir}")
 
     run = load_json(run_path)
     comment_path = find_file(artifact_dir, "pr-comment.md")
@@ -228,13 +257,16 @@ def render_summary(artifact_dir: Path, feature: str, max_cases: int) -> str:
 
 def main() -> None:
     args = parse_args()
-    if args.artifact_dir:
-        artifact_dir = Path(args.artifact_dir)
-    else:
-        run_id = args.run_id or find_run_id(args.compat_repo, args.pr_number, args.commit)
-        artifact_dir = download_artifact(args.compat_repo, run_id, args.pr_number, Path(args.download_dir))
+    try:
+        if args.artifact_dir:
+            artifact_dir = Path(args.artifact_dir)
+        else:
+            run_id = args.run_id or find_run_id(args.compat_repo, args.pr_number, args.commit)
+            artifact_dir = download_artifact(args.compat_repo, run_id, args.pr_number, Path(args.download_dir))
 
-    print(render_summary(artifact_dir, args.feature, args.max_cases), end="")
+        print(render_summary(artifact_dir, args.feature, args.max_cases), end="")
+    except CommandError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 if __name__ == "__main__":
