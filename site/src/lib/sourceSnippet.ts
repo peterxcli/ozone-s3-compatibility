@@ -105,37 +105,98 @@ export function extractPythonSnippet(
   };
 }
 
+function pythonCommentIndex(line: string): number {
+  let quote = "";
+  let escaped = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (quote) {
+      if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char === "#") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function highlightPythonPlainSegment(segment: string): string {
+  const tokenPattern = new RegExp(`\\b(${PYTHON_KEYWORDS.map(escapeRegExp).join("|")})\\b|\\b(\\d+(?:\\.\\d+)?)\\b`, "g");
+  let html = "";
+  let cursor = 0;
+
+  for (const match of segment.matchAll(tokenPattern)) {
+    const matchText = match[0];
+    const start = match.index || 0;
+    html += escapeHtml(segment.slice(cursor, start));
+    html += match[1]
+      ? `<span class="syntax-keyword">${escapeHtml(matchText)}</span>`
+      : `<span class="syntax-number">${escapeHtml(matchText)}</span>`;
+    cursor = start + matchText.length;
+  }
+
+  html += escapeHtml(segment.slice(cursor));
+  return html;
+}
+
+function highlightPythonCodeSegment(segment: string): string {
+  const stringPattern = /(["'])(?:\\.|(?!\1).)*\1/g;
+  let html = "";
+  let cursor = 0;
+
+  for (const match of segment.matchAll(stringPattern)) {
+    const matchText = match[0];
+    const start = match.index || 0;
+    html += highlightPythonPlainSegment(segment.slice(cursor, start));
+    html += `<span class="syntax-string">${escapeHtml(matchText)}</span>`;
+    cursor = start + matchText.length;
+  }
+
+  html += highlightPythonPlainSegment(segment.slice(cursor));
+  return html;
+}
+
 function highlightPythonLine(line: string): string {
-  const commentIndex = line.indexOf("#");
+  const commentIndex = pythonCommentIndex(line);
   const code = commentIndex === -1 ? line : line.slice(0, commentIndex);
   const comment = commentIndex === -1 ? "" : line.slice(commentIndex);
-  const keywordPattern = new RegExp(`\\b(${PYTHON_KEYWORDS.map(escapeRegExp).join("|")})\\b`, "g");
-  const highlightedCode = code
-    .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="syntax-string">$1</span>')
-    .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="syntax-number">$1</span>')
-    .replace(keywordPattern, '<span class="syntax-keyword">$1</span>');
+  const highlightedCode = highlightPythonCodeSegment(code);
 
   if (!comment) {
     return highlightedCode;
   }
-  return `${highlightedCode}<span class="syntax-comment">${comment}</span>`;
+  return `${highlightedCode}<span class="syntax-comment">${escapeHtml(comment)}</span>`;
 }
 
 function highlightShellLine(line: string): string {
-  return line
+  return escapeHtml(line)
     .replace(/(^|\s)(--?[A-Za-z0-9][\w-]*)/g, '$1<span class="syntax-option">$2</span>')
     .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="syntax-string">$1</span>');
 }
 
 export function highlightCode(source: string, language = "text"): string {
-  const escaped = escapeHtml(source);
   if (language === "python") {
-    return escaped.split("\n").map(highlightPythonLine).join("\n");
+    return source.split("\n").map(highlightPythonLine).join("\n");
   }
   if (language === "shell" || language === "bash") {
-    return escaped.split("\n").map(highlightShellLine).join("\n");
+    return source.split("\n").map(highlightShellLine).join("\n");
   }
-  return escaped;
+  return escapeHtml(source);
 }
 
 function normalizeGithubRepo(repo: string): string | null {

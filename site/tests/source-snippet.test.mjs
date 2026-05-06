@@ -65,3 +65,19 @@ test("escapes HTML before applying syntax highlighting", () => {
   assert.match(highlighted, /&lt;tag&gt;/);
   assert.doesNotMatch(highlighted, /<tag>/);
 });
+
+test("keeps escaped Python string entities intact before comment highlighting", () => {
+  const highlighted = highlightCode(
+    [
+      "def test_cors_presigned_put_object_tenant():",
+      "    _test_cors_options_presigned_method(",
+      "        client=get_tenant_client(),",
+      "        method='put_object',",
+      "    )",
+    ].join("\n"),
+    "python",
+  );
+
+  assert.match(highlighted, /method=<span class="syntax-string">&#39;put_object&#39;<\/span>,/);
+  assert.doesNotMatch(highlighted, /method=&<span class="syntax-comment">#39;/);
+});
