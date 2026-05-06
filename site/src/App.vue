@@ -66,6 +66,7 @@ const searchResults = ref<SearchResult[]>([]);
 const searchLoading = ref<boolean>(false);
 const searchError = ref<string>("");
 let searchRequestSequence = 0;
+let searchSessionPromise: Promise<SearchSession | null> | null = null;
 
 const expandedHistory = reactive<Record<string, boolean>>({});
 const runDetailsById = reactive<Record<string, FullRun | undefined>>({});
@@ -220,23 +221,31 @@ async function ensureSearchSession(): Promise<SearchSession | null> {
   if (searchSession.value) {
     return searchSession.value;
   }
-
-  searchLoading.value = true;
-  searchError.value = "";
-
-  try {
-    const payload =
-      searchIndexPayload.value ||
-      (await fetchJson<SearchIndexPayload>("./data/search-index.json", "Failed to load search index"));
-    searchIndexPayload.value = payload;
-    searchSession.value = await createPersistentSearchSession(payload);
-    return searchSession.value;
-  } catch (error) {
-    searchError.value = errorMessageOf(error);
-    return null;
-  } finally {
-    searchLoading.value = false;
+  if (searchSessionPromise) {
+    return searchSessionPromise;
   }
+
+  searchSessionPromise = (async () => {
+    searchLoading.value = true;
+    searchError.value = "";
+
+    try {
+      const payload =
+        searchIndexPayload.value ||
+        (await fetchJson<SearchIndexPayload>("./data/search-index.json", "Failed to load search index"));
+      searchIndexPayload.value = payload;
+      searchSession.value = await createPersistentSearchSession(payload);
+      return searchSession.value;
+    } catch (error) {
+      searchError.value = errorMessageOf(error);
+      return null;
+    } finally {
+      searchLoading.value = false;
+      searchSessionPromise = null;
+    }
+  })();
+
+  return searchSessionPromise;
 }
 
 async function refreshSearchResults(): Promise<void> {
