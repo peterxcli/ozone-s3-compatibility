@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -254,6 +255,97 @@ def build_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def search_text(*values: Any) -> str:
+    parts: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, list):
+            parts.extend(str(item) for item in value if item)
+        else:
+            text = str(value)
+            if text:
+                parts.append(text)
+    return " ".join(parts)
+
+
+def search_variants(value: Any) -> str:
+    text = search_text(value)
+    if not text:
+        return ""
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    spaced = re.sub(r"[_/.-]+", " ", spaced)
+    return search_text(text, spaced)
+
+
+def case_search_text(row: dict[str, Any]) -> str:
+    return search_text(
+        search_variants(row["suiteKey"]),
+        search_variants(row["suiteLabel"]),
+        search_variants(row["testName"]),
+        search_variants(row["classname"]),
+        search_variants(row["status"]),
+        search_variants(row["features"]),
+        search_variants(row["message"]),
+        search_variants(row["detail"]),
+        search_variants(row["runId"]),
+        search_variants(row["runStartedAt"]),
+        search_variants(row["runFinishedAt"]),
+        search_variants(row["runFile"]),
+    )
+
+
+def build_search_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    sorted_runs = sorted(runs, key=lambda item: item.get("started_at", ""), reverse=True)
+    rows: list[dict[str, Any]] = []
+
+    for run_ordinal, run in enumerate(sorted_runs):
+        run_id = str(run.get("run_id") or run.get("id") or "")
+        run_started_at = str(run.get("started_at") or "")
+        run_finished_at = str(run.get("finished_at") or run_started_at)
+        run_file = f"data/runs/{run_id}.json"
+        is_latest_run = run_ordinal == 0
+
+        for suite_key, suite in run.get("suites", {}).items():
+            suite_label = str(suite.get("label") or suite_key.replace("_", "-"))
+            cases = suite.get("cases") or suite.get("non_passing_cases") or []
+            for case in cases:
+                row = {
+                    "id": len(rows) + 1,
+                    "suiteKey": suite_key,
+                    "suiteLabel": suite_label,
+                    "testName": str(case.get("name") or ""),
+                    "classname": str(case.get("classname") or ""),
+                    "status": str(case.get("status") or "unknown"),
+                    "features": [str(feature) for feature in case.get("features", []) if feature],
+                    "message": str(case.get("message") or ""),
+                    "detail": str(case.get("detail") or ""),
+                    "runId": run_id,
+                    "runStartedAt": run_started_at,
+                    "runFinishedAt": run_finished_at,
+                    "runFile": run_file,
+                    "isLatestRun": is_latest_run,
+                    "runOrdinal": run_ordinal,
+                }
+                row["searchText"] = case_search_text(row)
+                rows.append(row)
+
+    generated_at = ""
+    if sorted_runs:
+        generated_at = sorted_runs[0].get("finished_at") or sorted_runs[0].get("started_at") or ""
+    index_hash = hashlib.sha256(
+        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
+
+    return {
+        "schema_version": 1,
+        "generated_at": generated_at,
+        "index_id": f"{generated_at}-{len(rows)}-{index_hash}",
+        "row_count": len(rows),
+        "rows": rows,
+    }
+
+
 def format_preview_timestamp(value: str) -> str:
     moment = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
     hour = moment.hour % 12 or 12
@@ -496,6 +588,10 @@ def main() -> None:
     index_payload = build_index(runs)
     (output_dir / "data" / "index.json").write_text(
         json.dumps(index_payload, indent=2, sort_keys=False) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "data" / "search-index.json").write_text(
+        json.dumps(build_search_index(runs), indent=2, sort_keys=False) + "\n",
         encoding="utf-8",
     )
 

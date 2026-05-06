@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
+    "test": "node --test tests/search.test.mjs",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
+    "flexsearch": "^0.8.212",
     "vue": "^3.5.22"
   },
   "devDependencies": {
