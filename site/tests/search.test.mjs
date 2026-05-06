@@ -145,6 +145,40 @@ const searchPayload = {
   ],
 };
 
+function searchTextForRow(row) {
+  return [
+    row.suiteKey,
+    row.suiteLabel,
+    row.testName,
+    row.classname,
+    row.status,
+    ...(row.features || []),
+    row.message,
+    row.detail,
+    row.runId,
+    row.runStartedAt,
+    row.runFile,
+    row.sourcePath,
+    row.sourceSymbol,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function payloadWithRows(rows) {
+  return {
+    ...searchPayload,
+    index_id: `test-${rows.map((row) => row.id).join("-")}`,
+    row_count: rows.length,
+    rows,
+  };
+}
+
+function rowWithSearchText(row, overrides) {
+  const nextRow = { ...row, ...overrides };
+  return { ...nextRow, searchText: searchTextForRow(nextRow) };
+}
+
 test("matches case-insensitive full text across test names and error messages", async () => {
   const session = await createInMemorySearchSession(searchPayload);
   const results = await session.search("accessdenied policy");
@@ -197,9 +231,48 @@ test("matches suite and run metadata and labels the latest run", async () => {
   assert(results[0].matchedFields.includes("run"));
 });
 
-test("prioritizes more recent matching runs before older matching runs", async () => {
+test("deduplicates identical historical matches behind the newest row", async () => {
   const session = await createInMemorySearchSession(searchPayload);
   const results = await session.search("checksum");
+
+  assert.deepEqual(
+    results.map((result) => result.runId),
+    ["2026-04-02T07-22-59Z"]
+  );
+});
+
+test("keeps older matching rows visible when their content differs", async () => {
+  const olderVariant = rowWithSearchText(searchPayload.rows[4], {
+    id: 6,
+    message: "Checksum mismatch after abort cleanup",
+    detail: "Cleanup left a multipart upload marker behind",
+    runId: "2026-03-31T07-22-59Z",
+    runStartedAt: "2026-03-31T07:22:59Z",
+    runFinishedAt: "2026-03-31T07:22:59Z",
+    runFile: "data/runs/2026-03-31T07-22-59Z.json",
+    runOrdinal: 2,
+  });
+  const session = await createInMemorySearchSession(payloadWithRows([...searchPayload.rows, olderVariant]));
+  const results = await session.search("checksum", "all", 2);
+
+  assert.deepEqual(
+    results.map((result) => ({ runId: result.runId, message: result.message })),
+    [
+      {
+        runId: "2026-04-02T07-22-59Z",
+        message: "Checksum mismatch in trailer",
+      },
+      {
+        runId: "2026-03-31T07-22-59Z",
+        message: "Checksum mismatch after abort cleanup",
+      },
+    ]
+  );
+});
+
+test("can include duplicate history when permalink restoration needs an exact run", async () => {
+  const session = await createInMemorySearchSession(searchPayload);
+  const results = await session.search("checksum", "all", 120, { dedupe: false });
 
   assert.deepEqual(
     results.map((result) => result.runId),

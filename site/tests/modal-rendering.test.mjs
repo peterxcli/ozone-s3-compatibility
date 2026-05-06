@@ -32,3 +32,8 @@ test("modal traps wheel and touch overscroll at scroll boundaries", () => {
   assert.match(appSource, /@touchstart="handleModalBackdropTouchStart"/);
   assert.match(appSource, /@touchmove="handleModalBackdropTouchMove"/);
 });
+
+test("search results visually distinguish latest run matches", () => {
+  assert.match(appSource, /:class="\{ 'latest-search-result': result\.isLatestRun \}"/);
+  assert.match(stylesSource, /\.search-result\.latest-search-result/);
+});

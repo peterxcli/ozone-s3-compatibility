@@ -59,9 +59,13 @@ export interface SearchResult {
   score: number;
 }
 
+export interface SearchOptions {
+  dedupe?: boolean;
+}
+
 export interface SearchSession {
   persistent: boolean;
-  search: (query: string, suiteFilter?: string, limit?: number) => Promise<SearchResult[]>;
+  search: (query: string, suiteFilter?: string, limit?: number, options?: SearchOptions) => Promise<SearchResult[]>;
 }
 
 interface SearchToken {
@@ -80,6 +84,10 @@ interface SearchField {
 interface RankedSearchResult extends SearchResult {
   runOrdinal: number;
   flexRank: number;
+}
+
+interface SearchDedupeInfo {
+  key: string;
 }
 
 type SearchIndex = {
@@ -124,11 +132,59 @@ function compactText(value: string): string {
   return value.replace(/\s+/g, "");
 }
 
+function comparableText(value: string | null | undefined): string {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function digestParts(parts: string[]): string {
+  const content = parts.map((part) => `${part.length}:${part}`).join("|");
+  let hash = 2166136261;
+
+  for (let index = 0; index < content.length; index += 1) {
+    hash ^= content.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `${content.length.toString(36)}-${(hash >>> 0).toString(36)}`;
+}
+
 function searchTokens(query: string): SearchToken[] {
   return normalizeText(query)
     .split(/\s+/)
     .filter(Boolean)
     .map((text) => ({ text, compact: compactText(text) }));
+}
+
+function rowIdentityDigest(row: SearchIndexRow): string {
+  const suiteKey = comparableText(row.suiteKey);
+  const sourcePath = comparableText(row.sourcePath);
+  const sourceSymbol = comparableText(row.sourceSymbol);
+
+  if (sourcePath || sourceSymbol) {
+    return digestParts(["source", suiteKey, sourcePath, sourceSymbol]);
+  }
+
+  return digestParts(["case", suiteKey, comparableText(row.classname), comparableText(row.testName)]);
+}
+
+function rowContentDigest(row: SearchIndexRow): string {
+  const features = (row.features || []).map((feature) => comparableText(feature)).sort().join(" ");
+  return digestParts([
+    comparableText(row.status),
+    features,
+    comparableText(row.message),
+    comparableText(row.detail),
+    comparableText(row.sourceSnippet),
+  ]);
+}
+
+function rowDedupeInfo(row: SearchIndexRow): SearchDedupeInfo {
+  return {
+    key: `${rowIdentityDigest(row)}:${rowContentDigest(row)}`,
+  };
 }
 
 function makeField(label: string, value: string | null | undefined): SearchField {
@@ -214,6 +270,28 @@ function rowsById(payload: SearchIndexPayload): Map<number, SearchIndexRow> {
   return new Map(payload.rows.map((row) => [row.id, row]));
 }
 
+function dedupeInfoById(payload: SearchIndexPayload): Map<number, SearchDedupeInfo> {
+  return new Map(payload.rows.map((row) => [row.id, rowDedupeInfo(row)]));
+}
+
+function removeDuplicateHistory(
+  results: RankedSearchResult[],
+  dedupeById: Map<number, SearchDedupeInfo>,
+): RankedSearchResult[] {
+  const seen = new Set<string>();
+  return results.filter((result) => {
+    const key = dedupeById.get(Number(result.id))?.key;
+    if (!key) {
+      return true;
+    }
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 function addRowsToIndex(index: SearchIndex, rows: SearchIndexRow[]): void {
   rows.forEach((row) => {
     index.add(row.id, row.searchText);
@@ -257,10 +335,11 @@ async function hydratePersistentIndex(index: SearchIndex, payload: SearchIndexPa
 
 function createSearchSession(payload: SearchIndexPayload, index: SearchIndex, persistent: boolean): SearchSession {
   const byId = rowsById(payload);
+  const rowDedupeById = dedupeInfoById(payload);
 
   return {
     persistent,
-    async search(query: string, suiteFilter = "all", limit = 120): Promise<SearchResult[]> {
+    async search(query: string, suiteFilter = "all", limit = 120, options: SearchOptions = {}): Promise<SearchResult[]> {
       const tokens = searchTokens(query);
       if (!tokens.length) {
         return [];
@@ -277,22 +356,25 @@ function createSearchSession(payload: SearchIndexPayload, index: SearchIndex, pe
         ranked.push(searchResultForRow(row, tokens, flexRank));
       });
 
-      return ranked
-        .sort((left, right) => {
-          if (left.runOrdinal !== right.runOrdinal) {
-            return left.runOrdinal - right.runOrdinal;
-          }
-          if (right.score !== left.score) {
-            return right.score - left.score;
-          }
-          if (left.flexRank !== right.flexRank) {
-            return left.flexRank - right.flexRank;
-          }
-          if (left.suiteLabel !== right.suiteLabel) {
-            return left.suiteLabel.localeCompare(right.suiteLabel);
-          }
-          return left.testName.localeCompare(right.testName);
-        })
+      const sorted = ranked.sort((left, right) => {
+        if (left.runOrdinal !== right.runOrdinal) {
+          return left.runOrdinal - right.runOrdinal;
+        }
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+        if (left.flexRank !== right.flexRank) {
+          return left.flexRank - right.flexRank;
+        }
+        if (left.suiteLabel !== right.suiteLabel) {
+          return left.suiteLabel.localeCompare(right.suiteLabel);
+        }
+        return left.testName.localeCompare(right.testName);
+      });
+
+      const visible = options.dedupe === false ? sorted : removeDuplicateHistory(sorted, rowDedupeById);
+
+      return visible
         .slice(0, limit)
         .map(({ runOrdinal: _runOrdinal, flexRank: _flexRank, ...result }) => result);
     },

@@ -467,6 +467,7 @@ async function openSharedSearchCase(selectedCase: SharedCaseIdentity): Promise<v
     selectedCase.testName,
     selectedCase.suiteKey || "all",
     Math.max(SEARCH_RESULT_LIMIT, 500),
+    { dedupe: false },
   );
   const result = candidates.find((candidate) => resultMatchesSharedCase(candidate, selectedCase));
   if (!result) {
@@ -1075,6 +1076,7 @@ onBeforeUnmount(() => {
               v-for="result in searchResults"
               :key="result.id"
               class="search-result"
+              :class="{ 'latest-search-result': result.isLatestRun }"
               role="button"
               tabindex="0"
               @click="openSearchResultModal(result)"
@@ -1095,9 +1097,9 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="search-result-meta">
+                <span v-if="result.isLatestRun" class="pill latest-run-pill">Latest run</span>
                 <span class="meta-chip">{{ result.suiteLabel }}</span>
                 <span class="meta-chip mono">{{ formatDate(result.runStartedAt) }}</span>
-                <span v-if="result.isLatestRun" class="pill latest-run-pill">Latest run</span>
                 <span v-for="field in result.matchedFields" :key="field" class="pill matched-field-pill">
                   {{ field }}
                 </span>
