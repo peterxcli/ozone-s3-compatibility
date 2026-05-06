@@ -67,6 +67,9 @@ const searchLoading = ref<boolean>(false);
 const searchError = ref<string>("");
 let searchRequestSequence = 0;
 let searchSessionPromise: Promise<SearchSession | null> | null = null;
+let searchPreloadScheduled = false;
+let searchPreloadTimer: number | null = null;
+let searchPreloadIdleHandle: number | null = null;
 
 const expandedHistory = reactive<Record<string, boolean>>({});
 const runDetailsById = reactive<Record<string, FullRun | undefined>>({});
@@ -173,6 +176,7 @@ async function bootstrap(): Promise<void> {
 
     await nextTick();
     setupHistoryObserver();
+    scheduleSearchSessionPreload();
 
     const target = pendingNavigationTarget.value || window.location.hash.slice(1);
     if (target) {
@@ -215,6 +219,37 @@ async function ensureHistoryRunLoaded(summary: RunSummary): Promise<void> {
   } finally {
     runLoading[summary.id] = false;
   }
+}
+
+function scheduleSearchSessionPreload(): void {
+  if (searchPreloadScheduled || searchSession.value || searchSessionPromise) {
+    return;
+  }
+
+  searchPreloadScheduled = true;
+  const preload = () => {
+    searchPreloadTimer = null;
+    searchPreloadIdleHandle = null;
+    void ensureSearchSession();
+  };
+
+  if ("requestIdleCallback" in window) {
+    searchPreloadIdleHandle = window.requestIdleCallback(preload, { timeout: 2000 });
+    return;
+  }
+
+  searchPreloadTimer = globalThis.setTimeout(preload, 250);
+}
+
+function cancelSearchSessionPreload(): void {
+  if (searchPreloadIdleHandle !== null && "cancelIdleCallback" in window) {
+    window.cancelIdleCallback(searchPreloadIdleHandle);
+  }
+  if (searchPreloadTimer !== null) {
+    window.clearTimeout(searchPreloadTimer);
+  }
+  searchPreloadIdleHandle = null;
+  searchPreloadTimer = null;
 }
 
 async function ensureSearchSession(): Promise<SearchSession | null> {
@@ -306,6 +341,7 @@ function clearSearch(): void {
 
 function retrySearchLoad(): void {
   searchSession.value = null;
+  searchSessionPromise = null;
   searchError.value = "";
   void refreshSearchResults();
 }
@@ -501,6 +537,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", handleDocumentKeydown);
   window.removeEventListener("hashchange", handleHashChange);
   window.removeEventListener("resize", handleWindowResize);
+  cancelSearchSessionPreload();
   destroyHistoryObserver();
 });
 </script>
