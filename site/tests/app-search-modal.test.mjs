@@ -11,7 +11,17 @@ test("search result details open in a dismissible modal with highlighted code", 
   assert.match(appSource, /selectedSearchResult/);
   assert.match(appSource, /openSearchResultModal\(result\)/);
   assert.match(appSource, /class="case-modal-backdrop"/);
-  assert.match(appSource, /@click\.self="closeSearchResultModal"/);
+  assert.match(appSource, /@click\.self="[^"]*closeSearchResultModal\(\)[^"]*"/);
   assert.match(appSource, /class="case-modal-close"/);
   assert.match(appSource, /v-html="highlightedSearchSnippet"/);
+  assert.match(appSource, /selectedSearchPermalink/);
+  assert.match(appSource, />Permalink</);
+});
+
+test("search query and selected result are synchronized with shareable URL state", () => {
+  assert.match(appSource, /parseSearchShareState/);
+  assert.match(appSource, /function applySearchUrlState\(\)/);
+  assert.match(appSource, /function syncSearchUrl/);
+  assert.match(appSource, /function handleWindowPopstate\(\)/);
+  assert.match(appSource, /window\.addEventListener\("popstate", handleWindowPopstate\)/);
 });

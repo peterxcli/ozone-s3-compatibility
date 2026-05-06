@@ -11,6 +11,13 @@ import {
   highlightCode,
 } from "./lib/sourceSnippet";
 import {
+  SEARCH_SECTION_HASH,
+  caseIdentityForResult,
+  parseSearchShareState,
+  resultMatchesSharedCase,
+  searchUrlFromState,
+} from "./lib/shareState";
+import {
   HISTORY_BATCH_SIZE,
   archivedRunAnchorId,
   deltaForSuite,
@@ -26,6 +33,7 @@ import {
 import { createPersistentSearchSession } from "./lib/search";
 import type { FullRun, HistoryTogglePayload, IndexPayload, RunSummary } from "./lib/types";
 import type { SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
+import type { SharedCaseIdentity } from "./lib/shareState";
 
 interface SummaryCard {
   key: string;
@@ -92,6 +100,7 @@ const caseSnippet = reactive<CaseSnippetState>({
 let searchRequestSequence = 0;
 let snippetRequestSequence = 0;
 let pageScrollYBeforeModal = 0;
+let applyingSharedUrlState = false;
 let searchSessionPromise: Promise<SearchSession | null> | null = null;
 let searchPreloadScheduled = false;
 let searchPreloadTimer: number | null = null;
@@ -126,6 +135,9 @@ const searchResultSummary = computed<string>(() => {
   return `${count} match${count === 1 ? "" : "es"}${suffix}`;
 });
 const highlightedSearchSnippet = computed<string>(() => highlightCode(caseSnippet.text, caseSnippet.language));
+const selectedSearchPermalink = computed<string>(() =>
+  selectedSearchResult.value ? searchUrlForResult(selectedSearchResult.value) : ""
+);
 const selectedSearchFields = computed<{ label: string; value: string }[]>(() => {
   const result = selectedSearchResult.value;
   if (!result) return [];
@@ -179,6 +191,9 @@ watch(
 );
 
 watch([trimmedSearchQuery, searchSuiteFilter], () => {
+  if (!applyingSharedUrlState) {
+    syncSearchUrl();
+  }
   void refreshSearchResults();
 });
 
@@ -222,9 +237,10 @@ async function bootstrap(): Promise<void> {
     await nextTick();
     setupHistoryObserver();
     scheduleSearchSessionPreload();
+    const searchStateApplied = await applySearchUrlState();
 
     const target = pendingNavigationTarget.value || window.location.hash.slice(1);
-    if (target) {
+    if (target && (!searchStateApplied || target !== SEARCH_SECTION_HASH.slice(1))) {
       await navigateToSection(target, { expandArchived: true });
     }
 
@@ -379,9 +395,13 @@ async function refreshSearchResults(): Promise<void> {
 }
 
 function clearSearch(): void {
+  if (selectedSearchResult.value) {
+    closeSearchResultModal({ syncUrl: false });
+  }
   searchQuery.value = "";
   searchSuiteFilter.value = "all";
   searchResults.value = [];
+  syncSearchUrl(null);
 }
 
 function retrySearchLoad(): void {
@@ -389,6 +409,99 @@ function retrySearchLoad(): void {
   searchSessionPromise = null;
   searchError.value = "";
   void refreshSearchResults();
+}
+
+function currentRelativeUrl(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function normalizedSuiteFilter(value: string): string {
+  return value === "all" || suiteOrder.value.includes(value) ? value : "all";
+}
+
+function searchUrlForResult(result: SearchResult): string {
+  return searchUrlFromState(
+    {
+      query: trimmedSearchQuery.value,
+      suiteFilter: searchSuiteFilter.value,
+      selectedCase: caseIdentityForResult(result),
+    },
+    window.location.href,
+  );
+}
+
+function syncSearchUrl(result: SearchResult | null = selectedSearchResult.value, mode: "replace" | "push" = "replace"): void {
+  if (applyingSharedUrlState) {
+    return;
+  }
+
+  const nextUrl = searchUrlFromState(
+    {
+      query: trimmedSearchQuery.value,
+      suiteFilter: searchSuiteFilter.value,
+      selectedCase: result ? caseIdentityForResult(result) : null,
+    },
+    window.location.href,
+  );
+
+  if (nextUrl === currentRelativeUrl()) {
+    return;
+  }
+
+  if (mode === "push") {
+    window.history.pushState(null, "", nextUrl);
+    return;
+  }
+  window.history.replaceState(null, "", nextUrl);
+}
+
+async function openSharedSearchCase(selectedCase: SharedCaseIdentity): Promise<void> {
+  const session = await ensureSearchSession();
+  if (!session) {
+    return;
+  }
+
+  const candidates = await session.search(
+    selectedCase.testName,
+    selectedCase.suiteKey || "all",
+    Math.max(SEARCH_RESULT_LIMIT, 500),
+  );
+  const result = candidates.find((candidate) => resultMatchesSharedCase(candidate, selectedCase));
+  if (!result) {
+    searchError.value = `Could not find shared test case ${selectedCase.testName} in run ${selectedCase.runId}.`;
+    return;
+  }
+
+  openSearchResultModal(result, { syncUrl: false });
+}
+
+async function applySearchUrlState(): Promise<boolean> {
+  const shareState = parseSearchShareState(window.location.href);
+  const sharedQuery = shareState.query || shareState.selectedCase?.testName || "";
+  const hasSharedSearchState = Boolean(sharedQuery || shareState.selectedCase);
+
+  if (!hasSharedSearchState) {
+    if (selectedSearchResult.value) {
+      closeSearchResultModal({ syncUrl: false });
+    }
+    return false;
+  }
+
+  applyingSharedUrlState = true;
+  searchQuery.value = sharedQuery;
+  searchSuiteFilter.value = normalizedSuiteFilter(shareState.suiteFilter);
+  applyingSharedUrlState = false;
+
+  await refreshSearchResults();
+  await navigateToSection(SEARCH_SECTION_HASH.slice(1));
+
+  if (shareState.selectedCase) {
+    await openSharedSearchCase(shareState.selectedCase);
+  } else if (selectedSearchResult.value) {
+    closeSearchResultModal({ syncUrl: false });
+  }
+
+  return true;
 }
 
 function lockPageScroll(): void {
@@ -482,18 +595,26 @@ async function loadSearchResultSnippet(result: SearchResult, requestId: number):
   }
 }
 
-function openSearchResultModal(result: SearchResult): void {
+function openSearchResultModal(result: SearchResult, options: { syncUrl?: boolean } = {}): void {
+  const { syncUrl = true } = options;
   lockPageScroll();
   selectedSearchResult.value = result;
   const requestId = ++snippetRequestSequence;
   void loadSearchResultSnippet(result, requestId);
+  if (syncUrl) {
+    syncSearchUrl(result, "push");
+  }
 }
 
-function closeSearchResultModal(): void {
+function closeSearchResultModal(options: { syncUrl?: boolean } = {}): void {
+  const { syncUrl = true } = options;
   selectedSearchResult.value = null;
   snippetRequestSequence += 1;
   resetCaseSnippet();
   unlockPageScroll();
+  if (syncUrl) {
+    syncSearchUrl(null);
+  }
 }
 
 async function openSelectedSearchRun(): Promise<void> {
@@ -613,7 +734,7 @@ async function navigateToSection(targetId: string, options: NavigationOptions = 
   const target = document.getElementById(targetId);
   if (target) {
     scrollElementIntoView(target);
-    window.history.replaceState(null, "", `#${targetId}`);
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${targetId}`);
     pendingNavigationTarget.value = "";
   } else {
     pendingNavigationTarget.value = targetId;
@@ -653,6 +774,10 @@ function handleHashChange(): void {
   }
 }
 
+function handleWindowPopstate(): void {
+  void applySearchUrlState();
+}
+
 function handleWindowResize(): void {
   trendPanelRef.value?.resizeCharts();
 }
@@ -690,6 +815,7 @@ onMounted(() => {
   document.addEventListener("focusin", handleDocumentFocus);
   document.addEventListener("keydown", handleDocumentKeydown);
   window.addEventListener("hashchange", handleHashChange);
+  window.addEventListener("popstate", handleWindowPopstate);
   window.addEventListener("resize", handleWindowResize);
   void bootstrap();
 });
@@ -699,6 +825,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("focusin", handleDocumentFocus);
   document.removeEventListener("keydown", handleDocumentKeydown);
   window.removeEventListener("hashchange", handleHashChange);
+  window.removeEventListener("popstate", handleWindowPopstate);
   window.removeEventListener("resize", handleWindowResize);
   cancelSearchSessionPreload();
   destroyHistoryObserver();
@@ -963,7 +1090,7 @@ onBeforeUnmount(() => {
       v-if="selectedSearchResult"
       class="case-modal-backdrop"
       aria-label="Close test case details"
-      @click.self="closeSearchResultModal"
+      @click.self="() => closeSearchResultModal()"
     >
       <section
         class="case-modal"
@@ -971,7 +1098,7 @@ onBeforeUnmount(() => {
         aria-modal="true"
         :aria-label="`${selectedSearchResult.testName} test case details`"
       >
-        <button class="case-modal-close" type="button" aria-label="Close test case details" @click="closeSearchResultModal">
+        <button class="case-modal-close" type="button" aria-label="Close test case details" @click="() => closeSearchResultModal()">
           &times;
         </button>
 
@@ -988,6 +1115,7 @@ onBeforeUnmount(() => {
 
         <div class="case-modal-actions">
           <button class="inline-button" type="button" @click="openSelectedSearchRun">Open run</button>
+          <a v-if="selectedSearchPermalink" class="inline-button" :href="selectedSearchPermalink">Permalink</a>
           <a v-if="caseSnippet.sourceUrl" class="inline-button" :href="caseSnippet.sourceUrl" target="_blank" rel="noreferrer">
             Source
           </a>
