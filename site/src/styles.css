@@ -988,7 +988,7 @@ th {
   align-items: start;
   padding: 1rem;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
   background: rgba(18, 38, 63, 0.56);
 }

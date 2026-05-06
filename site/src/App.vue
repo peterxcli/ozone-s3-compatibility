@@ -114,8 +114,10 @@ const runErrors = reactive<Record<string, string>>({});
 const archivedDropdown = ref<HTMLElement | null>(null);
 const historySentinel = ref<HTMLElement | null>(null);
 const trendPanelRef = ref<TrendPanelExposed | null>(null);
+const caseModalBackdrop = ref<HTMLElement | null>(null);
 
 let historyObserver: IntersectionObserver | null = null;
+let modalTouchY = 0;
 
 const hasRuns = computed(() => Boolean(index.value?.runs?.length));
 const latestSummary = computed<RunSummary | null>(() => index.value?.runs?.[0] || null);
@@ -521,6 +523,86 @@ function unlockPageScroll(): void {
   document.body.style.top = "";
   window.scrollTo(0, pageScrollYBeforeModal);
   pageScrollYBeforeModal = 0;
+}
+
+function canScrollElementInDirection(element: HTMLElement, deltaY: number): boolean {
+  const maxScrollTop = element.scrollHeight - element.clientHeight;
+  if (maxScrollTop <= 1) {
+    return false;
+  }
+  if (deltaY < 0) {
+    return element.scrollTop > 0;
+  }
+  if (deltaY > 0) {
+    return element.scrollTop < maxScrollTop - 1;
+  }
+  return false;
+}
+
+function isScrollableModalElement(element: HTMLElement): boolean {
+  const overflowY = window.getComputedStyle(element).overflowY;
+  return (overflowY === "auto" || overflowY === "scroll") && element.scrollHeight > element.clientHeight + 1;
+}
+
+function modalElementFromEventTarget(target: EventTarget | null): HTMLElement | null {
+  if (target instanceof HTMLElement) {
+    return target;
+  }
+  if (target instanceof Node && target.parentElement instanceof HTMLElement) {
+    return target.parentElement;
+  }
+  return null;
+}
+
+function canScrollInsideModal(target: EventTarget | null, deltaY: number): boolean {
+  const backdrop = caseModalBackdrop.value;
+  if (!backdrop || deltaY === 0) {
+    return false;
+  }
+
+  let element = modalElementFromEventTarget(target);
+  if (!element || !backdrop.contains(element)) {
+    element = backdrop;
+  }
+
+  while (element && backdrop.contains(element)) {
+    if (isScrollableModalElement(element) && canScrollElementInDirection(element, deltaY)) {
+      return true;
+    }
+    if (element === backdrop) {
+      break;
+    }
+    element = element.parentElement;
+  }
+
+  return false;
+}
+
+function preventModalBoundaryOverscroll(event: Event, deltaY: number): void {
+  if (deltaY === 0 || canScrollInsideModal(event.target, deltaY)) {
+    return;
+  }
+  if (event.cancelable) {
+    event.preventDefault();
+  }
+}
+
+function handleModalBackdropWheel(event: WheelEvent): void {
+  preventModalBoundaryOverscroll(event, event.deltaY);
+}
+
+function handleModalBackdropTouchStart(event: TouchEvent): void {
+  modalTouchY = event.touches[0]?.clientY ?? 0;
+}
+
+function handleModalBackdropTouchMove(event: TouchEvent): void {
+  if (event.touches.length !== 1) {
+    return;
+  }
+  const nextTouchY = event.touches[0]?.clientY ?? modalTouchY;
+  const deltaY = modalTouchY - nextTouchY;
+  modalTouchY = nextTouchY;
+  preventModalBoundaryOverscroll(event, deltaY);
 }
 
 function fallbackSnippetForResult(result: SearchResult): string {
@@ -1088,9 +1170,13 @@ onBeforeUnmount(() => {
 
     <div
       v-if="selectedSearchResult"
+      ref="caseModalBackdrop"
       class="case-modal-backdrop"
       aria-label="Close test case details"
       @click.self="() => closeSearchResultModal()"
+      @wheel="handleModalBackdropWheel"
+      @touchstart="handleModalBackdropTouchStart"
+      @touchmove="handleModalBackdropTouchMove"
     >
       <section
         class="case-modal"

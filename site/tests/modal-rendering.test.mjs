@@ -13,7 +13,7 @@ test("modal avoids compositor-heavy backdrop blur while scrolling", () => {
 
   assert.doesNotMatch(backdropRule, /backdrop-filter/);
   assert.match(backdropRule, /overflow-y:\s*auto/);
-  assert.match(backdropRule, /overscroll-behavior:\s*contain/);
+  assert.match(backdropRule, /overscroll-behavior:\s*none/);
 });
 
 test("page scroll is locked while the modal is open", () => {
@@ -22,4 +22,13 @@ test("page scroll is locked while the modal is open", () => {
   assert.match(appSource, /document\.body\.classList\.add\("modal-open"\)/);
   assert.match(appSource, /document\.body\.classList\.remove\("modal-open"\)/);
   assert.match(stylesSource, /body\.modal-open/);
+});
+
+test("modal traps wheel and touch overscroll at scroll boundaries", () => {
+  assert.match(appSource, /function handleModalBackdropWheel\(event: WheelEvent\): void/);
+  assert.match(appSource, /function handleModalBackdropTouchStart\(event: TouchEvent\): void/);
+  assert.match(appSource, /function handleModalBackdropTouchMove\(event: TouchEvent\): void/);
+  assert.match(appSource, /@wheel="handleModalBackdropWheel"/);
+  assert.match(appSource, /@touchstart="handleModalBackdropTouchStart"/);
+  assert.match(appSource, /@touchmove="handleModalBackdropTouchMove"/);
 });
