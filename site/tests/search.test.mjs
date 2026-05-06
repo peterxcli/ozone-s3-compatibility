@@ -270,6 +270,24 @@ test("keeps older matching rows visible when their content differs", async () =>
   );
 });
 
+test("deduplicates historical rows when detail only differs by volatile object addresses", async () => {
+  const latestRow = rowWithSearchText(searchPayload.rows[1], {
+    detail:
+      "s3tests/functional/test_s3.py:7058:\nclient = <botocore.client.S3 object at 0x7efd50744c90>, method = 'put_object'",
+  });
+  const olderRow = rowWithSearchText(searchPayload.rows[4], {
+    detail:
+      "s3tests/functional/test_s3.py:7057:\nclient = <botocore.client.S3 object at 0x7fcfc14a4f90>, method = 'put_object'",
+  });
+  const session = await createInMemorySearchSession(payloadWithRows([latestRow, olderRow]));
+  const results = await session.search("checksum");
+
+  assert.deepEqual(
+    results.map((result) => result.runId),
+    ["2026-04-02T07-22-59Z"]
+  );
+});
+
 test("can include duplicate history when permalink restoration needs an exact run", async () => {
   const session = await createInMemorySearchSession(searchPayload);
   const results = await session.search("checksum", "all", 120, { dedupe: false });

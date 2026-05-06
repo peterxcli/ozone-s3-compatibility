@@ -139,6 +139,12 @@ function comparableText(value: string | null | undefined): string {
     .toLowerCase();
 }
 
+function comparableContentText(value: string | null | undefined): string {
+  return comparableText(value)
+    .replace(/0x[0-9a-f]+/g, "0x...")
+    .replace(/\b([\w./-]+\.[a-z0-9]+):\d+/g, "$1:<line>");
+}
+
 function digestParts(parts: string[]): string {
   const content = parts.map((part) => `${part.length}:${part}`).join("|");
   let hash = 2166136261;
@@ -171,13 +177,13 @@ function rowIdentityDigest(row: SearchIndexRow): string {
 }
 
 function rowContentDigest(row: SearchIndexRow): string {
-  const features = (row.features || []).map((feature) => comparableText(feature)).sort().join(" ");
+  const features = (row.features || []).map((feature) => comparableContentText(feature)).sort().join(" ");
   return digestParts([
-    comparableText(row.status),
+    comparableContentText(row.status),
     features,
-    comparableText(row.message),
-    comparableText(row.detail),
-    comparableText(row.sourceSnippet),
+    comparableContentText(row.message),
+    comparableContentText(row.detail),
+    comparableContentText(row.sourceSnippet),
   ]);
 }
 
