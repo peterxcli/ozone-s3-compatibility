@@ -17,6 +17,12 @@ export interface SearchIndexRow {
   runFile: string;
   isLatestRun: boolean;
   runOrdinal: number;
+  sourceLanguage?: string;
+  sourcePath?: string;
+  sourceSymbol?: string;
+  sourceRef?: string;
+  sourceRepo?: string;
+  sourceSnippet?: string;
   searchText: string;
 }
 
@@ -43,6 +49,12 @@ export interface SearchResult {
   runFinishedAt?: string;
   runFile: string;
   isLatestRun: boolean;
+  sourceLanguage?: string;
+  sourcePath?: string;
+  sourceSymbol?: string;
+  sourceRef?: string;
+  sourceRepo?: string;
+  sourceSnippet?: string;
   matchedFields: string[];
   score: number;
 }
@@ -81,12 +93,13 @@ type SearchIndex = {
 
 const SEARCH_DB_NAME = "ozone-s3-compatibility-search";
 const SEARCH_STORAGE_KEY = "ozone-s3-compatibility-search-index-id";
-const FIELD_ORDER = ["test name", "error message", "suite", "run", "class", "feature", "status"];
+const FIELD_ORDER = ["test name", "error message", "suite", "run", "source", "class", "feature", "status"];
 const FIELD_WEIGHTS: Record<string, number> = {
   "test name": 80,
   "error message": 50,
   suite: 40,
   run: 30,
+  source: 24,
   class: 15,
   feature: 10,
   status: 6,
@@ -142,6 +155,7 @@ function rowFields(row: SearchIndexRow): SearchField[] {
     makeField("error message", `${row.message || ""} ${row.detail || ""}`),
     makeField("suite", `${row.suiteKey} ${row.suiteLabel}`),
     makeField("run", `${row.runId} ${row.runStartedAt} ${row.runFinishedAt || ""} ${row.runFile}`),
+    makeField("source", `${row.sourcePath || ""} ${row.sourceSymbol || ""}`),
     makeField("class", row.classname),
     makeField("feature", (row.features || []).join(" ")),
     makeField("status", row.status),
@@ -183,6 +197,12 @@ function searchResultForRow(row: SearchIndexRow, tokens: SearchToken[], flexRank
     runFinishedAt: row.runFinishedAt,
     runFile: row.runFile,
     isLatestRun: row.isLatestRun,
+    sourceLanguage: row.sourceLanguage,
+    sourcePath: row.sourcePath,
+    sourceSymbol: row.sourceSymbol,
+    sourceRef: row.sourceRef,
+    sourceRepo: row.sourceRepo,
+    sourceSnippet: row.sourceSnippet,
     matchedFields: uniqueMatchedFields(fields, tokens),
     score: scoreMatch(fields, tokens),
     runOrdinal: row.runOrdinal,

@@ -505,6 +505,21 @@ code,
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-strong);
+  cursor: pointer;
+  outline: none;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.search-result:hover,
+.search-result:focus-visible {
+  border-color: rgba(13, 127, 171, 0.3);
+  background: white;
+  box-shadow: 0 14px 32px rgba(16, 45, 76, 0.1);
+  transform: translateY(-1px);
 }
 
 .search-result-head {
@@ -540,10 +555,6 @@ code,
   color: var(--accent-strong);
   background: rgba(13, 127, 171, 0.08);
   border-color: rgba(13, 127, 171, 0.16);
-}
-
-.search-open-button {
-  justify-self: start;
 }
 
 .run-shell {
@@ -960,6 +971,172 @@ th {
   word-break: break-word;
 }
 
+.case-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(18, 38, 63, 0.46);
+  backdrop-filter: blur(7px);
+}
+
+.case-modal {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+  width: min(980px, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  box-shadow: 0 24px 80px rgba(16, 45, 76, 0.24);
+}
+
+.case-modal-close {
+  appearance: none;
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.case-modal-close:hover,
+.case-modal-close:focus-visible {
+  border-color: rgba(13, 127, 171, 0.32);
+  box-shadow: 0 8px 18px rgba(16, 45, 76, 0.12);
+}
+
+.case-modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: flex-start;
+  padding-right: 2.4rem;
+}
+
+.case-modal-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.case-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.case-modal-fields {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.32fr) minmax(0, 1fr);
+  gap: 0.55rem 0.85rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fbfdff;
+}
+
+.case-modal-fields dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.case-modal-fields dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.case-modal-section {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.case-modal-section h3,
+.case-code-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.case-detail-text,
+.case-code {
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #0f1720;
+  color: #d8e2ee;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.case-detail-text {
+  max-height: 15rem;
+  padding: 0.85rem;
+  white-space: pre-wrap;
+}
+
+.case-code-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.case-code {
+  max-height: min(34rem, 52vh);
+  padding: 0;
+}
+
+.case-code code {
+  display: block;
+  min-width: max-content;
+  padding: 0.9rem 1rem;
+  white-space: pre;
+}
+
+.syntax-keyword {
+  color: #7dd3fc;
+  font-weight: 700;
+}
+
+.syntax-string {
+  color: #f8c76a;
+}
+
+.syntax-number {
+  color: #c4b5fd;
+}
+
+.syntax-comment {
+  color: #8da2b8;
+}
+
+.syntax-option {
+  color: #7dd3fc;
+}
+
 .loading {
   color: var(--muted);
 }
@@ -1097,8 +1274,25 @@ a:hover {
   .chart-head,
   .suite-head,
   .case-item-head,
-  .search-result-head {
+  .search-result-head,
+  .case-modal-header,
+  .case-code-head {
     flex-direction: column;
+  }
+
+  .case-modal-backdrop {
+    place-items: stretch;
+    padding: 0.5rem;
+  }
+
+  .case-modal {
+    width: 100%;
+    max-height: calc(100vh - 1rem);
+    padding: 1rem;
+  }
+
+  .case-modal-fields {
+    grid-template-columns: 1fr;
   }
 
   .panel-summary-side,

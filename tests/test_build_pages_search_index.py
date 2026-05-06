@@ -31,7 +31,18 @@ def run(run_id: str, started_at: str, message: str, detail: str = "") -> dict:
         "finished_at": started_at,
         "status": "completed",
         "workflow_run_url": "",
-        "sources": {},
+        "sources": {
+            "s3_tests": {
+                "repo": "https://github.com/ceph/s3-tests.git",
+                "ref": "main",
+                "commit": "abc123def456",
+            },
+            "mint": {
+                "repo": "https://github.com/minio/mint.git",
+                "ref": "master",
+                "commit": "mint123",
+            },
+        },
         "suites": {
             "s3_tests": {
                 "label": "s3-tests",
@@ -83,6 +94,11 @@ class SearchIndexBuildTests(unittest.TestCase):
         self.assertIn("Access Denied", latest["searchText"])
         self.assertIn("SignatureDoesNotMatch", latest["searchText"])
         self.assertIn("Signature Does Not Match", latest["searchText"])
+        self.assertEqual("python", latest["sourceLanguage"])
+        self.assertEqual("s3tests/functional/test_s3.py", latest["sourcePath"])
+        self.assertEqual("test_bucket_policy_access_denied", latest["sourceSymbol"])
+        self.assertEqual("abc123def456", latest["sourceRef"])
+        self.assertEqual("https://github.com/ceph/s3-tests.git", latest["sourceRepo"])
 
 
 if __name__ == "__main__":

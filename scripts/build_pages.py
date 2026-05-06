@@ -278,6 +278,62 @@ def search_variants(value: Any) -> str:
     return search_text(text, spaced)
 
 
+def case_source_ref(source: dict[str, Any]) -> str:
+    commit = str(source.get("commit") or "")
+    if commit and commit != "unknown":
+        return commit
+    return str(source.get("ref") or "")
+
+
+def strip_test_params(name: str) -> str:
+    return name.strip().split("[", 1)[0]
+
+
+def s3_source_path(classname: str) -> str:
+    if not classname:
+        return ""
+    return f"{classname.replace('.', '/')}.py"
+
+
+def fallback_source_snippet(suite_key: str, suite_label: str, case: dict[str, Any]) -> str:
+    test_name = str(case.get("name") or "").strip()
+    classname = str(case.get("classname") or "").strip()
+    if suite_key == "mint":
+        lines = [
+            "# Mint test case",
+            f"target={classname}" if classname else "",
+            f"function={test_name}" if test_name else "",
+        ]
+        return "\n".join(line for line in lines if line)
+    return f"# {suite_label} test case\n{test_name}".strip()
+
+
+def case_source_info(run: dict[str, Any], suite_key: str, suite_label: str, case: dict[str, Any]) -> dict[str, str]:
+    test_name = str(case.get("name") or "").strip()
+    classname = str(case.get("classname") or "").strip()
+    sources = run.get("sources", {})
+    source = sources.get(suite_key, {}) if isinstance(sources, dict) else {}
+
+    if suite_key == "s3_tests":
+        return {
+            "sourceLanguage": "python",
+            "sourcePath": s3_source_path(classname),
+            "sourceSymbol": strip_test_params(test_name),
+            "sourceRef": case_source_ref(source),
+            "sourceRepo": str(source.get("repo") or ""),
+            "sourceSnippet": "",
+        }
+
+    return {
+        "sourceLanguage": "shell" if suite_key == "mint" else "text",
+        "sourcePath": "",
+        "sourceSymbol": strip_test_params(test_name),
+        "sourceRef": case_source_ref(source),
+        "sourceRepo": str(source.get("repo") or ""),
+        "sourceSnippet": fallback_source_snippet(suite_key, suite_label, case),
+    }
+
+
 def case_search_text(row: dict[str, Any]) -> str:
     return search_text(
         search_variants(row["suiteKey"]),
@@ -292,7 +348,13 @@ def case_search_text(row: dict[str, Any]) -> str:
         search_variants(row["runStartedAt"]),
         search_variants(row["runFinishedAt"]),
         search_variants(row["runFile"]),
+        search_variants(row["sourcePath"]),
+        search_variants(row["sourceSymbol"]),
     )
+
+
+def string_field(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def build_search_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -314,18 +376,19 @@ def build_search_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
                     "id": len(rows) + 1,
                     "suiteKey": suite_key,
                     "suiteLabel": suite_label,
-                    "testName": str(case.get("name") or ""),
-                    "classname": str(case.get("classname") or ""),
-                    "status": str(case.get("status") or "unknown"),
-                    "features": [str(feature) for feature in case.get("features", []) if feature],
-                    "message": str(case.get("message") or ""),
-                    "detail": str(case.get("detail") or ""),
+                    "testName": string_field(case.get("name")),
+                    "classname": string_field(case.get("classname")),
+                    "status": string_field(case.get("status") or "unknown"),
+                    "features": [str(feature).strip() for feature in case.get("features", []) if str(feature).strip()],
+                    "message": string_field(case.get("message")),
+                    "detail": string_field(case.get("detail")),
                     "runId": run_id,
                     "runStartedAt": run_started_at,
                     "runFinishedAt": run_finished_at,
                     "runFile": run_file,
                     "isLatestRun": is_latest_run,
                     "runOrdinal": run_ordinal,
+                    **case_source_info(run, suite_key, suite_label, case),
                 }
                 row["searchText"] = case_search_text(row)
                 rows.append(row)

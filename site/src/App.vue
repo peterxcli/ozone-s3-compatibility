@@ -5,6 +5,12 @@ import HistoryItem from "./components/HistoryItem.vue";
 import RunDetails from "./components/RunDetails.vue";
 import TrendPanel from "./components/TrendPanel.vue";
 import {
+  extractPythonSnippet,
+  githubBlobUrl,
+  githubRawUrl,
+  highlightCode,
+} from "./lib/sourceSnippet";
+import {
   HISTORY_BATCH_SIZE,
   archivedRunAnchorId,
   deltaForSuite,
@@ -41,6 +47,15 @@ interface TrendPanelExposed {
   resizeCharts: () => void;
 }
 
+interface CaseSnippetState {
+  loading: boolean;
+  text: string;
+  language: string;
+  sourceUrl: string;
+  error: string;
+  startLine: number | null;
+}
+
 const SEARCH_RESULT_LIMIT = 120;
 
 function errorMessageOf(error: unknown): string {
@@ -65,7 +80,17 @@ const searchSession = ref<SearchSession | null>(null);
 const searchResults = ref<SearchResult[]>([]);
 const searchLoading = ref<boolean>(false);
 const searchError = ref<string>("");
+const selectedSearchResult = ref<SearchResult | null>(null);
+const caseSnippet = reactive<CaseSnippetState>({
+  loading: false,
+  text: "",
+  language: "text",
+  sourceUrl: "",
+  error: "",
+  startLine: null,
+});
 let searchRequestSequence = 0;
+let snippetRequestSequence = 0;
 let searchSessionPromise: Promise<SearchSession | null> | null = null;
 let searchPreloadScheduled = false;
 let searchPreloadTimer: number | null = null;
@@ -98,6 +123,25 @@ const searchResultSummary = computed<string>(() => {
   const count = searchResults.value.length;
   const suffix = count === SEARCH_RESULT_LIMIT ? " shown" : "";
   return `${count} match${count === 1 ? "" : "es"}${suffix}`;
+});
+const highlightedSearchSnippet = computed<string>(() => highlightCode(caseSnippet.text, caseSnippet.language));
+const selectedSearchFields = computed<{ label: string; value: string }[]>(() => {
+  const result = selectedSearchResult.value;
+  if (!result) return [];
+
+  return [
+    { label: "Suite", value: result.suiteLabel },
+    { label: "Status", value: String(result.status || "unknown").replace(/_/g, " ") },
+    { label: "Run ID", value: result.runId },
+    { label: "Started", value: formatDate(result.runStartedAt) },
+    { label: "Finished", value: result.runFinishedAt ? formatDate(result.runFinishedAt) : "" },
+    { label: "Class", value: result.classname || "" },
+    { label: "Source path", value: result.sourcePath || "" },
+    { label: "Source symbol", value: result.sourceSymbol || "" },
+    { label: "Source ref", value: result.sourceRef || "" },
+    { label: "Matched fields", value: (result.matchedFields || []).join(", ") },
+    { label: "Features", value: (result.features || []).map((feature) => feature.replace(/_/g, " ")).join(", ") },
+  ].filter((field) => field.value);
 });
 
 const summaryCards = computed<SummaryCard[]>(() => {
@@ -346,6 +390,99 @@ function retrySearchLoad(): void {
   void refreshSearchResults();
 }
 
+function fallbackSnippetForResult(result: SearchResult): string {
+  if (result.sourceSnippet) {
+    return result.sourceSnippet;
+  }
+
+  const lines = [
+    result.sourcePath ? `# Source file: ${result.sourcePath}` : "",
+    result.sourceSymbol ? `# Test symbol: ${result.sourceSymbol}` : "",
+    result.message ? `# Message: ${result.message}` : "",
+    !result.sourcePath && result.testName ? result.testName : "",
+  ];
+  return lines.filter(Boolean).join("\n") || "Source snippet unavailable.";
+}
+
+function resetCaseSnippet(result: SearchResult | null = null): void {
+  caseSnippet.loading = false;
+  caseSnippet.text = result ? fallbackSnippetForResult(result) : "";
+  caseSnippet.language = result?.sourceLanguage || "text";
+  caseSnippet.sourceUrl = "";
+  caseSnippet.error = "";
+  caseSnippet.startLine = null;
+}
+
+async function loadSearchResultSnippet(result: SearchResult, requestId: number): Promise<void> {
+  resetCaseSnippet(result);
+
+  const rawUrl =
+    result.sourceRepo && result.sourceRef && result.sourcePath
+      ? githubRawUrl(result.sourceRepo, result.sourceRef, result.sourcePath)
+      : null;
+
+  if (!rawUrl) {
+    return;
+  }
+
+  caseSnippet.loading = true;
+  caseSnippet.sourceUrl = githubBlobUrl(result.sourceRepo || "", result.sourceRef || "", result.sourcePath || "") || rawUrl;
+
+  try {
+    const response = await fetch(rawUrl);
+    if (!response.ok) {
+      throw new Error(`Source fetch failed with HTTP ${response.status}`);
+    }
+
+    const source = await response.text();
+    const extracted =
+      result.sourceLanguage === "python" && result.sourceSymbol
+        ? extractPythonSnippet(source, result.sourceSymbol)
+        : { text: source.split(/\r?\n/).slice(0, 80).join("\n"), startLine: 1 };
+
+    if (requestId !== snippetRequestSequence || selectedSearchResult.value?.id !== result.id) {
+      return;
+    }
+
+    caseSnippet.text = extracted.text || fallbackSnippetForResult(result);
+    caseSnippet.startLine = extracted.startLine;
+    caseSnippet.sourceUrl =
+      githubBlobUrl(result.sourceRepo || "", result.sourceRef || "", result.sourcePath || "", extracted.startLine) ||
+      rawUrl;
+  } catch (error) {
+    if (requestId !== snippetRequestSequence || selectedSearchResult.value?.id !== result.id) {
+      return;
+    }
+    caseSnippet.error = errorMessageOf(error);
+    caseSnippet.text = fallbackSnippetForResult(result);
+  } finally {
+    if (requestId === snippetRequestSequence && selectedSearchResult.value?.id === result.id) {
+      caseSnippet.loading = false;
+    }
+  }
+}
+
+function openSearchResultModal(result: SearchResult): void {
+  selectedSearchResult.value = result;
+  const requestId = ++snippetRequestSequence;
+  void loadSearchResultSnippet(result, requestId);
+}
+
+function closeSearchResultModal(): void {
+  selectedSearchResult.value = null;
+  snippetRequestSequence += 1;
+  resetCaseSnippet();
+}
+
+async function openSelectedSearchRun(): Promise<void> {
+  const result = selectedSearchResult.value;
+  if (!result) {
+    return;
+  }
+  closeSearchResultModal();
+  await openSearchResult(result);
+}
+
 async function openSearchResult(result: SearchResult): Promise<void> {
   const runIndex = index.value?.runs.findIndex(
     (summary) => summary.id === result.runId || summary.file === result.runFile
@@ -479,6 +616,10 @@ function handleDocumentFocus(event: FocusEvent): void {
 
 function handleDocumentKeydown(event: KeyboardEvent): void {
   if (event.key === "Escape") {
+    if (selectedSearchResult.value) {
+      closeSearchResultModal();
+      return;
+    }
     closeArchivedMenu();
   }
 }
@@ -653,7 +794,7 @@ onBeforeUnmount(() => {
               {{
                 searchIndexLoaded && searchIndexPayload
                   ? `${searchIndexPayload.row_count} cases indexed ${searchSession?.persistent ? "in IndexedDB" : "in memory"}`
-                  : "Persistent browser search loads on first query."
+                  : "Persistent browser search loads in the background."
               }}
             </p>
           </div>
@@ -698,7 +839,16 @@ onBeforeUnmount(() => {
             </div>
 
             <div v-if="!searchResults.length" class="loader empty-state">No stored cases match this search.</div>
-            <article v-for="result in searchResults" :key="result.id" class="search-result">
+            <article
+              v-for="result in searchResults"
+              :key="result.id"
+              class="search-result"
+              role="button"
+              tabindex="0"
+              @click="openSearchResultModal(result)"
+              @keydown.enter.prevent="openSearchResultModal(result)"
+              @keydown.space.prevent="openSearchResultModal(result)"
+            >
               <div class="search-result-head">
                 <div>
                   <h3>{{ result.testName }}</h3>
@@ -727,10 +877,6 @@ onBeforeUnmount(() => {
                 </span>
               </div>
               <div v-if="result.message || result.detail" class="callout">{{ result.message || result.detail }}</div>
-
-              <button class="inline-button search-open-button" type="button" @click="openSearchResult(result)">
-                Open run
-              </button>
             </article>
           </div>
         </section>
@@ -789,5 +935,64 @@ onBeforeUnmount(() => {
         </section>
       </template>
     </main>
+
+    <div
+      v-if="selectedSearchResult"
+      class="case-modal-backdrop"
+      aria-label="Close test case details"
+      @click.self="closeSearchResultModal"
+    >
+      <section
+        class="case-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="`${selectedSearchResult.testName} test case details`"
+      >
+        <button class="case-modal-close" type="button" aria-label="Close test case details" @click="closeSearchResultModal">
+          &times;
+        </button>
+
+        <div class="case-modal-header">
+          <div>
+            <p class="eyebrow">{{ selectedSearchResult.suiteLabel }}</p>
+            <h2>{{ selectedSearchResult.testName }}</h2>
+            <p v-if="selectedSearchResult.classname" class="subtle mono">{{ selectedSearchResult.classname }}</p>
+          </div>
+          <span class="status-pill" :class="statusClass(selectedSearchResult.status)">
+            {{ String(selectedSearchResult.status || "unknown").replace(/_/g, " ") }}
+          </span>
+        </div>
+
+        <div class="case-modal-actions">
+          <button class="inline-button" type="button" @click="openSelectedSearchRun">Open run</button>
+          <a v-if="caseSnippet.sourceUrl" class="inline-button" :href="caseSnippet.sourceUrl" target="_blank" rel="noreferrer">
+            Source
+          </a>
+        </div>
+
+        <dl class="case-modal-fields">
+          <template v-for="field in selectedSearchFields" :key="field.label">
+            <dt>{{ field.label }}</dt>
+            <dd>{{ field.value }}</dd>
+          </template>
+        </dl>
+
+        <section v-if="selectedSearchResult.message || selectedSearchResult.detail" class="case-modal-section">
+          <h3>Failure Detail</h3>
+          <div v-if="selectedSearchResult.message" class="callout">{{ selectedSearchResult.message }}</div>
+          <pre v-if="selectedSearchResult.detail" class="case-detail-text">{{ selectedSearchResult.detail }}</pre>
+        </section>
+
+        <section class="case-modal-section">
+          <div class="case-code-head">
+            <h3>Test Code</h3>
+            <span v-if="caseSnippet.loading" class="subtle">Loading source...</span>
+            <span v-else-if="caseSnippet.error" class="subtle">Showing indexed fallback.</span>
+            <span v-else-if="caseSnippet.startLine" class="subtle">Starts at line {{ caseSnippet.startLine }}</span>
+          </div>
+          <pre class="case-code"><code :class="`language-${caseSnippet.language}`" v-html="highlightedSearchSnippet"></code></pre>
+        </section>
+      </section>
+    </div>
   </div>
 </template>
