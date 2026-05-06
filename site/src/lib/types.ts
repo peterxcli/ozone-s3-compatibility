@@ -20,6 +20,7 @@ export interface StoredCaseEntry {
   classname?: string;
   duration_ms?: number | null;
   message?: string;
+  detail?: string;
 }
 
 export interface SuiteRecord {

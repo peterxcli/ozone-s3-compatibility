@@ -14,8 +14,12 @@ import {
   formatPercent,
   runScope,
   scrollElementIntoView,
+  statusClass,
+  suiteLabel,
 } from "./lib/report";
+import { searchRunCases } from "./lib/search";
 import type { FullRun, HistoryTogglePayload, IndexPayload, RunSummary } from "./lib/types";
+import type { SearchResult, SearchableRun } from "./lib/search";
 
 interface SummaryCard {
   key: string;
@@ -37,6 +41,8 @@ interface TrendPanelExposed {
   resizeCharts: () => void;
 }
 
+const SEARCH_RESULT_LIMIT = 120;
+
 function errorMessageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -52,6 +58,12 @@ const archivedMenuOpen = ref<boolean>(false);
 const historyBatchSize = ref<number>(HISTORY_BATCH_SIZE);
 const visibleArchivedCount = ref<number>(HISTORY_BATCH_SIZE);
 const pendingNavigationTarget = ref<string>("");
+const searchQuery = ref<string>("");
+const searchSuiteFilter = ref<string>("all");
+const searchRuns = ref<SearchableRun[]>([]);
+const searchRunsLoaded = ref<boolean>(false);
+const searchRunsLoading = ref<boolean>(false);
+const searchRunsError = ref<string>("");
 
 const expandedHistory = reactive<Record<string, boolean>>({});
 const runDetailsById = reactive<Record<string, FullRun | undefined>>({});
@@ -73,6 +85,16 @@ const archivedSummaries = computed<RunSummary[]>(() => index.value?.runs?.slice(
 const visibleArchivedSummaries = computed<RunSummary[]>(() => archivedSummaries.value.slice(0, visibleArchivedCount.value));
 const canLoadMoreHistory = computed(() => visibleArchivedCount.value < archivedSummaries.value.length);
 const suiteOrder = computed<string[]>(() => index.value?.suite_order || []);
+const trimmedSearchQuery = computed<string>(() => searchQuery.value.trim());
+const searchActive = computed<boolean>(() => trimmedSearchQuery.value.length > 0);
+const searchResults = computed<SearchResult[]>(() =>
+  searchRunCases(searchRuns.value, trimmedSearchQuery.value, searchSuiteFilter.value, SEARCH_RESULT_LIMIT)
+);
+const searchResultSummary = computed<string>(() => {
+  const count = searchResults.value.length;
+  const suffix = count === SEARCH_RESULT_LIMIT ? " shown" : "";
+  return `${count} match${count === 1 ? "" : "es"}${suffix}`;
+});
 
 const summaryCards = computed<SummaryCard[]>(() => {
   const latest = latestSummary.value;
@@ -106,6 +128,12 @@ watch(
     setupHistoryObserver();
   }
 );
+
+watch([trimmedSearchQuery, searchSuiteFilter], ([query]) => {
+  if (query) {
+    void ensureSearchRunsLoaded();
+  }
+});
 
 function deltaClass(delta: number | null): string {
   if (delta === null) return "flat";
@@ -188,6 +216,70 @@ async function ensureHistoryRunLoaded(summary: RunSummary): Promise<void> {
   } finally {
     runLoading[summary.id] = false;
   }
+}
+
+async function ensureSearchRunsLoaded(): Promise<void> {
+  if (!index.value || searchRunsLoaded.value || searchRunsLoading.value) {
+    return;
+  }
+
+  searchRunsLoading.value = true;
+  searchRunsError.value = "";
+
+  try {
+    searchRuns.value = await Promise.all(
+      index.value.runs.map(async (summary, runIndex) => {
+        const isLatestRun = runIndex === 0;
+        let run = isLatestRun ? latestRun.value : runDetailsById[summary.id];
+
+        if (!run) {
+          run = await fetchRun(summary.file);
+        }
+
+        if (isLatestRun) {
+          latestRun.value = run;
+        } else {
+          runDetailsById[summary.id] = run;
+        }
+
+        return { summary, run, isLatestRun };
+      })
+    );
+    searchRunsLoaded.value = true;
+  } catch (error) {
+    searchRunsError.value = errorMessageOf(error);
+  } finally {
+    searchRunsLoading.value = false;
+  }
+}
+
+function clearSearch(): void {
+  searchQuery.value = "";
+  searchSuiteFilter.value = "all";
+}
+
+function retrySearchLoad(): void {
+  searchRunsLoaded.value = false;
+  searchRunsError.value = "";
+  void ensureSearchRunsLoaded();
+}
+
+async function openSearchResult(result: SearchResult): Promise<void> {
+  const runIndex = index.value?.runs.findIndex(
+    (summary) => summary.id === result.runId || summary.file === result.runFile
+  );
+  if (runIndex === undefined || runIndex < 0 || !index.value) {
+    return;
+  }
+
+  if (runIndex === 0) {
+    await navigateToSection("latest-run-section");
+    return;
+  }
+
+  const archivedIndex = runIndex - 1;
+  const summary = index.value.runs[runIndex];
+  await navigateToSection(archivedRunAnchorId(summary, archivedIndex), { expandArchived: true });
 }
 
 function ensureHistoryVisible(summary: RunSummary): void {
@@ -375,6 +467,9 @@ onBeforeUnmount(() => {
         <a class="sticky-link" href="#latest-run-section" @click.prevent="handleStickyNavigation('latest-run-section')">
           Latest Run
         </a>
+        <a class="sticky-link" href="#search-section" @click.prevent="handleStickyNavigation('search-section')">
+          Search
+        </a>
         <a class="sticky-link" href="#trend-panel-section" @click.prevent="handleStickyNavigation('trend-panel-section')">
           Topline Trends
         </a>
@@ -461,6 +556,94 @@ onBeforeUnmount(() => {
                 {{ card.passed }} passed, {{ card.failedOrErrored }} failed/error, {{ card.skipped }} skipped
               </p>
               <p class="delta" :class="deltaClass(card.delta)">{{ deltaText(card.delta) }}</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="search-section" class="panel search-panel section-anchor">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Search</p>
+              <h2>Test Case Search</h2>
+            </div>
+            <p class="panel-note">
+              {{ searchRunsLoaded ? `${searchRuns.length} runs indexed` : "Run details load on first search." }}
+            </p>
+          </div>
+
+          <div class="search-controls">
+            <label class="search-input-wrap">
+              <span class="visually-hidden">Search test cases</span>
+              <input
+                v-model="searchQuery"
+                class="search-input"
+                type="search"
+                placeholder="Search suite, test name, run, or error message"
+                autocomplete="off"
+              />
+            </label>
+            <label class="search-suite-filter">
+              <span class="visually-hidden">Suite filter</span>
+              <select v-model="searchSuiteFilter">
+                <option value="all">All suites</option>
+                <option v-for="suiteKey in suiteOrder" :key="suiteKey" :value="suiteKey">
+                  {{ suiteLabel(suiteKey) }}
+                </option>
+              </select>
+            </label>
+            <button v-if="searchActive" class="inline-button" type="button" @click="clearSearch">Clear</button>
+          </div>
+
+          <div v-if="!searchActive" class="loader empty-state">
+            Search stored cases by suite, test name, run id, run date, or failure text.
+          </div>
+          <div v-else-if="searchRunsLoading" class="loader">Indexing run details…</div>
+          <div v-else-if="searchRunsError" class="loader history-detail-state">
+            {{ searchRunsError }}
+            <button class="inline-button" type="button" @click="retrySearchLoad">Retry</button>
+          </div>
+          <div v-else class="search-results">
+            <div class="search-results-head">
+              <span class="pill">{{ searchResultSummary }}</span>
+              <span v-if="searchResults.length === SEARCH_RESULT_LIMIT" class="subtle">
+                Refine the query to narrow the result set.
+              </span>
+            </div>
+
+            <div v-if="!searchResults.length" class="loader empty-state">No stored cases match this search.</div>
+            <article v-for="result in searchResults" :key="result.id" class="search-result">
+              <div class="search-result-head">
+                <div>
+                  <h3>{{ result.testName }}</h3>
+                  <div class="case-meta subtle mono">
+                    <span v-if="result.classname">{{ result.classname }}</span>
+                    <span>{{ result.runId }}</span>
+                  </div>
+                </div>
+                <span class="status-pill" :class="statusClass(result.status)">
+                  {{ String(result.status || "unknown").replace(/_/g, " ") }}
+                </span>
+              </div>
+
+              <div class="search-result-meta">
+                <span class="meta-chip">{{ result.suiteLabel }}</span>
+                <span class="meta-chip mono">{{ formatDate(result.runStartedAt) }}</span>
+                <span v-if="result.isLatestRun" class="pill latest-run-pill">Latest run</span>
+                <span v-for="field in result.matchedFields" :key="field" class="pill matched-field-pill">
+                  {{ field }}
+                </span>
+              </div>
+
+              <div v-if="(result.features || []).length" class="feature-tags">
+                <span v-for="feature in result.features" :key="feature" class="feature-tag">
+                  {{ feature.replace(/_/g, " ") }}
+                </span>
+              </div>
+              <div v-if="result.message || result.detail" class="callout">{{ result.message || result.detail }}</div>
+
+              <button class="inline-button search-open-button" type="button" @click="openSearchResult(result)">
+                Open run
+              </button>
             </article>
           </div>
         </section>
