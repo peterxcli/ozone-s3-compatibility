@@ -566,6 +566,15 @@ code,
   border-color: rgba(13, 127, 171, 0.16);
 }
 
+.search-match {
+  display: inline;
+  padding: 0 0.08em;
+  border-radius: 0.2em;
+  background: rgba(255, 203, 77, 0.42);
+  color: inherit;
+  box-shadow: inset 0 -0.08em 0 rgba(216, 137, 16, 0.35);
+}
+
 .run-shell {
   display: grid;
   gap: 1rem;

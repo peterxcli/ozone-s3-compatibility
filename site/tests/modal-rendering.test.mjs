@@ -38,3 +38,11 @@ test("search results keep the latest badge without coloring the whole card", () 
   assert.doesNotMatch(appSource, /latest-search-result/);
   assert.doesNotMatch(stylesSource, /\.search-result\.latest-search-result/);
 });
+
+test("search results highlight matched visible text", () => {
+  assert.match(appSource, /import \{ highlightSearchMatch \} from "\.\/lib\/searchHighlight"/);
+  assert.match(appSource, /function highlightSearchResultText\(value: string \| null \| undefined\): string/);
+  assert.match(appSource, /v-html="highlightSearchResultText\(result\.testName\)"/);
+  assert.match(appSource, /v-html="highlightSearchResultText\(result\.message \|\| result\.detail\)"/);
+  assert.match(stylesSource, /\.search-match/);
+});

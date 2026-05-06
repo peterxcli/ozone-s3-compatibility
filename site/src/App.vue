@@ -31,6 +31,7 @@ import {
   suiteLabel,
 } from "./lib/report";
 import { createPersistentSearchSession } from "./lib/search";
+import { highlightSearchMatch } from "./lib/searchHighlight";
 import type { FullRun, HistoryTogglePayload, IndexPayload, RunSummary } from "./lib/types";
 import type { SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
 import type { SharedCaseIdentity } from "./lib/shareState";
@@ -207,6 +208,10 @@ function deltaClass(delta: number | null): string {
 function deltaText(delta: number | null): string {
   if (delta === null) return "No previous data";
   return `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)} pts vs previous`;
+}
+
+function highlightSearchResultText(value: string | null | undefined): string {
+  return highlightSearchMatch(value, trimmedSearchQuery.value);
 }
 
 function historyRun(summaryId: string): FullRun | null {
@@ -1084,32 +1089,41 @@ onBeforeUnmount(() => {
             >
               <div class="search-result-head">
                 <div>
-                  <h3>{{ result.testName }}</h3>
+                  <h3 v-html="highlightSearchResultText(result.testName)"></h3>
                   <div class="case-meta subtle mono">
-                    <span v-if="result.classname">{{ result.classname }}</span>
-                    <span>{{ result.runId }}</span>
+                    <span v-if="result.classname" v-html="highlightSearchResultText(result.classname)"></span>
+                    <span v-html="highlightSearchResultText(result.runId)"></span>
                   </div>
                 </div>
-                <span class="status-pill" :class="statusClass(result.status)">
-                  {{ String(result.status || "unknown").replace(/_/g, " ") }}
-                </span>
+                <span
+                  class="status-pill"
+                  :class="statusClass(result.status)"
+                  v-html="highlightSearchResultText(String(result.status || 'unknown').replace(/_/g, ' '))"
+                ></span>
               </div>
 
               <div class="search-result-meta">
                 <span v-if="result.isLatestRun" class="pill latest-run-pill">Latest run</span>
-                <span class="meta-chip">{{ result.suiteLabel }}</span>
-                <span class="meta-chip mono">{{ formatDate(result.runStartedAt) }}</span>
+                <span class="meta-chip" v-html="highlightSearchResultText(result.suiteLabel)"></span>
+                <span class="meta-chip mono" v-html="highlightSearchResultText(formatDate(result.runStartedAt))"></span>
                 <span v-for="field in result.matchedFields" :key="field" class="pill matched-field-pill">
                   {{ field }}
                 </span>
               </div>
 
               <div v-if="(result.features || []).length" class="feature-tags">
-                <span v-for="feature in result.features" :key="feature" class="feature-tag">
-                  {{ feature.replace(/_/g, " ") }}
-                </span>
+                <span
+                  v-for="feature in result.features"
+                  :key="feature"
+                  class="feature-tag"
+                  v-html="highlightSearchResultText(feature.replace(/_/g, ' '))"
+                ></span>
               </div>
-              <div v-if="result.message || result.detail" class="callout">{{ result.message || result.detail }}</div>
+              <div
+                v-if="result.message || result.detail"
+                class="callout"
+                v-html="highlightSearchResultText(result.message || result.detail)"
+              ></div>
             </article>
           </div>
         </section>
