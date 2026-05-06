@@ -1076,7 +1076,6 @@ onBeforeUnmount(() => {
               v-for="result in searchResults"
               :key="result.id"
               class="search-result"
-              :class="{ 'latest-search-result': result.isLatestRun }"
               role="button"
               tabindex="0"
               @click="openSearchResultModal(result)"

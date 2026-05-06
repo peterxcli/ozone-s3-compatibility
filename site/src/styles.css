@@ -530,12 +530,6 @@ code,
   transform: translateY(-1px);
 }
 
-.search-result.latest-search-result {
-  border-color: rgba(15, 157, 113, 0.28);
-  background: linear-gradient(180deg, rgba(15, 157, 113, 0.08), rgba(255, 255, 255, 0.96));
-  box-shadow: 0 12px 28px rgba(15, 157, 113, 0.08);
-}
-
 .search-result-head {
   display: flex;
   justify-content: space-between;

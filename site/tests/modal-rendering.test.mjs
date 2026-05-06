@@ -33,7 +33,8 @@ test("modal traps wheel and touch overscroll at scroll boundaries", () => {
   assert.match(appSource, /@touchmove="handleModalBackdropTouchMove"/);
 });
 
-test("search results visually distinguish latest run matches", () => {
-  assert.match(appSource, /:class="\{ 'latest-search-result': result\.isLatestRun \}"/);
-  assert.match(stylesSource, /\.search-result\.latest-search-result/);
+test("search results keep the latest badge without coloring the whole card", () => {
+  assert.match(appSource, /class="pill latest-run-pill"/);
+  assert.doesNotMatch(appSource, /latest-search-result/);
+  assert.doesNotMatch(stylesSource, /\.search-result\.latest-search-result/);
 });
