@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url);
 const tscBin = path.join(siteRoot, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");
 
 rmSync(outDir, { recursive: true, force: true });
+process.on("exit", () => rmSync(outDir, { recursive: true, force: true }));
 execFileSync(
   tscBin,
   [
@@ -26,6 +27,7 @@ execFileSync(
     "ES2022,DOM",
     "--strict",
     "--skipLibCheck",
+    "--esModuleInterop",
     "--rootDir",
     "src/lib",
     "--outDir",
@@ -34,106 +36,120 @@ execFileSync(
   ],
   { cwd: siteRoot, stdio: "inherit" }
 );
+writeFileSync(path.join(outDir, "package.json"), '{"type":"commonjs"}\n', "utf8");
+symlinkSync(path.join(siteRoot, "node_modules"), path.join(outDir, "node_modules"), "junction");
 
-const { searchRunCases } = require(path.join(outDir, "search.js"));
+const { createInMemorySearchSession, createPersistentSearchSession } = require(path.join(outDir, "search.js"));
 
-function summary(id, startedAt, file = `data/runs/${id}.json`) {
-  return {
-    id,
-    status: "completed",
-    started_at: startedAt,
-    finished_at: startedAt,
-    workflow_run_url: "",
-    execution: null,
-    file,
-    sources: {
-      ozone: { repo: "ozone", short_commit: "ozone123" },
-      s3_tests: { repo: "s3-tests", short_commit: "s3tests123" },
-      mint: { repo: "mint", short_commit: "mint123" },
+const searchPayload = {
+  schema_version: 1,
+  generated_at: "2026-04-02T07:22:59Z",
+  index_id: "2026-04-02T07-22-59Z-5",
+  row_count: 5,
+  rows: [
+    {
+      id: 1,
+      suiteKey: "s3_tests",
+      suiteLabel: "s3-tests",
+      testName: "test_bucket_policy_access_denied",
+      classname: "s3tests.functional.test_s3",
+      status: "fail",
+      features: ["policy"],
+      message: "ClientError: AccessDenied for bucket policy",
+      detail: "",
+      runId: "2026-04-02T07-22-59Z",
+      runStartedAt: "2026-04-02T07:22:59Z",
+      runFinishedAt: "2026-04-02T07:22:59Z",
+      runFile: "data/runs/2026-04-02T07-22-59Z.json",
+      isLatestRun: true,
+      runOrdinal: 0,
+      searchText:
+        "s3_tests s3-tests test_bucket_policy_access_denied s3tests.functional.test_s3 fail policy ClientError: AccessDenied for bucket policy 2026-04-02T07-22-59Z 2026-04-02T07:22:59Z data/runs/2026-04-02T07-22-59Z.json",
     },
-    suites: {
-      s3_tests: {
-        label: "s3-tests",
-        status: "completed",
-        summary: { compatibility_rate: 0.5, eligible: 2, passed: 1, failed: 1, errored: 0, skipped: 0 },
-        feature_summaries: [],
-      },
-      mint: {
-        label: "mint",
-        status: "completed",
-        summary: { compatibility_rate: 1, eligible: 1, passed: 1, failed: 0, errored: 0, skipped: 0 },
-        feature_summaries: [],
-      },
+    {
+      id: 2,
+      suiteKey: "s3_tests",
+      suiteLabel: "s3-tests",
+      testName: "test_multipart_upload_checksum",
+      classname: "s3tests.functional.test_headers",
+      status: "error",
+      features: ["headers"],
+      message: "Checksum mismatch in trailer",
+      detail: "",
+      runId: "2026-04-02T07-22-59Z",
+      runStartedAt: "2026-04-02T07:22:59Z",
+      runFinishedAt: "2026-04-02T07:22:59Z",
+      runFile: "data/runs/2026-04-02T07-22-59Z.json",
+      isLatestRun: true,
+      runOrdinal: 0,
+      searchText:
+        "s3_tests s3-tests test_multipart_upload_checksum s3tests.functional.test_headers error headers Checksum mismatch in trailer 2026-04-02T07-22-59Z 2026-04-02T07:22:59Z data/runs/2026-04-02T07-22-59Z.json",
     },
-  };
-}
-
-function fullRun(id, startedAt) {
-  const runSummary = summary(id, startedAt);
-  return {
-    ...runSummary,
-    run_id: id,
-    suites: {
-      s3_tests: {
-        ...runSummary.suites.s3_tests,
-        included_case_strategy: "non_passing_only",
-        non_passing_cases: [
-          {
-            name: "test_bucket_policy_access_denied",
-            classname: "s3tests.functional.test_s3",
-            status: "fail",
-            features: ["policy"],
-            duration_ms: 42,
-            message: "ClientError: AccessDenied for bucket policy",
-          },
-          {
-            name: "test_multipart_upload_checksum",
-            classname: "s3tests.functional.test_headers",
-            status: "error",
-            features: ["headers"],
-            duration_ms: 100,
-            message: "Checksum mismatch in trailer",
-          },
-          {
-            name: "test_v4_signature_streaming",
-            classname: "s3tests.functional.test_headers",
-            status: "fail",
-            features: ["headers"],
-            duration_ms: 84,
-            message: "",
-            detail: "Traceback: SignatureDoesNotMatch while validating signed chunks",
-          },
-        ],
-      },
-      mint: {
-        ...runSummary.suites.mint,
-        included_case_strategy: "all",
-        cases: [
-          {
-            name: "minio-js_presigned_get",
-            classname: "minio-js",
-            status: "pass",
-            features: ["presigned"],
-            duration_ms: 15,
-            message: "",
-          },
-        ],
-      },
+    {
+      id: 3,
+      suiteKey: "s3_tests",
+      suiteLabel: "s3-tests",
+      testName: "test_v4_signature_streaming",
+      classname: "s3tests.functional.test_headers",
+      status: "fail",
+      features: ["headers"],
+      message: "",
+      detail: "Traceback: SignatureDoesNotMatch while validating signed chunks",
+      runId: "2026-04-02T07-22-59Z",
+      runStartedAt: "2026-04-02T07:22:59Z",
+      runFinishedAt: "2026-04-02T07:22:59Z",
+      runFile: "data/runs/2026-04-02T07-22-59Z.json",
+      isLatestRun: true,
+      runOrdinal: 0,
+      searchText:
+        "s3_tests s3-tests test_v4_signature_streaming s3tests.functional.test_headers fail headers Traceback: SignatureDoesNotMatch while validating signed chunks 2026-04-02T07-22-59Z 2026-04-02T07:22:59Z data/runs/2026-04-02T07-22-59Z.json",
     },
-  };
-}
+    {
+      id: 4,
+      suiteKey: "mint",
+      suiteLabel: "mint",
+      testName: "minio-js_presigned_get",
+      classname: "minio-js",
+      status: "pass",
+      features: ["presigned"],
+      message: "",
+      detail: "",
+      runId: "2026-04-02T07-22-59Z",
+      runStartedAt: "2026-04-02T07:22:59Z",
+      runFinishedAt: "2026-04-02T07:22:59Z",
+      runFile: "data/runs/2026-04-02T07-22-59Z.json",
+      isLatestRun: true,
+      runOrdinal: 0,
+      searchText:
+        "mint mint minio-js_presigned_get minio-js pass presigned 2026-04-02T07-22-59Z 2026-04-02T07:22:59Z data/runs/2026-04-02T07-22-59Z.json",
+    },
+    {
+      id: 5,
+      suiteKey: "s3_tests",
+      suiteLabel: "s3-tests",
+      testName: "test_multipart_upload_checksum",
+      classname: "s3tests.functional.test_headers",
+      status: "error",
+      features: ["headers"],
+      message: "Checksum mismatch in trailer",
+      detail: "",
+      runId: "2026-04-01T07-22-59Z",
+      runStartedAt: "2026-04-01T07:22:59Z",
+      runFinishedAt: "2026-04-01T07:22:59Z",
+      runFile: "data/runs/2026-04-01T07-22-59Z.json",
+      isLatestRun: false,
+      runOrdinal: 1,
+      searchText:
+        "s3_tests s3-tests test_multipart_upload_checksum s3tests.functional.test_headers error headers Checksum mismatch in trailer 2026-04-01T07-22-59Z 2026-04-01T07:22:59Z data/runs/2026-04-01T07-22-59Z.json",
+    },
+  ],
+};
 
-const olderRun = fullRun("2026-04-01T07-22-59Z", "2026-04-01T07:22:59Z");
-const latestRun = fullRun("2026-04-02T07-22-59Z", "2026-04-02T07:22:59Z");
-const searchableRuns = [
-  { summary: summary(olderRun.run_id, olderRun.started_at), run: olderRun, isLatestRun: false },
-  { summary: summary(latestRun.run_id, latestRun.started_at), run: latestRun, isLatestRun: true },
-];
+test("matches case-insensitive full text across test names and error messages", async () => {
+  const session = await createInMemorySearchSession(searchPayload);
+  const results = await session.search("accessdenied policy");
 
-test("matches case-insensitive full text across test names and error messages", () => {
-  const results = searchRunCases(searchableRuns, "accessdenied policy");
-
-  assert.equal(results.length, 2);
+  assert.equal(results.length, 1);
   assert.deepEqual(
     {
       testName: results[0].testName,
@@ -154,8 +170,9 @@ test("matches case-insensitive full text across test names and error messages", 
   assert(results[0].matchedFields.includes("error message"));
 });
 
-test("matches suite and run metadata and labels the latest run", () => {
-  const results = searchRunCases(searchableRuns, "mint 2026-04-02");
+test("matches suite and run metadata and labels the latest run", async () => {
+  const session = await createInMemorySearchSession(searchPayload);
+  const results = await session.search("mint 2026-04-02");
 
   assert.equal(results.length, 1);
   assert.deepEqual(
@@ -171,8 +188,8 @@ test("matches suite and run metadata and labels the latest run", () => {
       testName: "minio-js_presigned_get",
       suiteKey: "mint",
       suiteLabel: "mint",
-      runId: latestRun.run_id,
-      runStartedAt: latestRun.started_at,
+      runId: "2026-04-02T07-22-59Z",
+      runStartedAt: "2026-04-02T07:22:59Z",
       isLatestRun: true,
     }
   );
@@ -180,30 +197,37 @@ test("matches suite and run metadata and labels the latest run", () => {
   assert(results[0].matchedFields.includes("run"));
 });
 
-test("prioritizes more recent matching runs before older matching runs", () => {
-  const results = searchRunCases(searchableRuns, "checksum");
+test("prioritizes more recent matching runs before older matching runs", async () => {
+  const session = await createInMemorySearchSession(searchPayload);
+  const results = await session.search("checksum");
 
   assert.deepEqual(
     results.map((result) => result.runId),
-    [latestRun.run_id, olderRun.run_id]
+    ["2026-04-02T07-22-59Z", "2026-04-01T07-22-59Z"]
   );
 });
 
-test("matches stored failure detail text when the short message is empty", () => {
-  const results = searchRunCases(searchableRuns, "signaturedoesnotmatch chunks");
+test("matches stored failure detail text when the short message is empty", async () => {
+  const session = await createInMemorySearchSession(searchPayload);
+  const results = await session.search("signaturedoesnotmatch chunks");
 
-  assert.equal(results.length, 2);
+  assert.equal(results.length, 1);
   assert.equal(results[0].testName, "test_v4_signature_streaming");
   assert.equal(results[0].detail, "Traceback: SignatureDoesNotMatch while validating signed chunks");
   assert(results[0].matchedFields.includes("error message"));
 });
 
-test("can narrow matches to a selected suite", () => {
-  const results = searchRunCases(
-    [{ summary: summary(latestRun.run_id, latestRun.started_at), run: latestRun, isLatestRun: true }],
-    "presigned",
-    "s3_tests"
-  );
+test("can narrow matches to a selected suite", async () => {
+  const session = await createInMemorySearchSession(searchPayload);
+  const results = await session.search("presigned", "s3_tests");
 
   assert.equal(results.length, 0);
+});
+
+test("falls back to in-memory search when IndexedDB is unavailable", async () => {
+  const session = await createPersistentSearchSession(searchPayload);
+  const results = await session.search("accessdenied");
+
+  assert.equal(session.persistent, false);
+  assert.equal(results[0].testName, "test_bucket_policy_access_denied");
 });

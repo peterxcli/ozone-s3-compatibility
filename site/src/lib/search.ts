@@ -1,9 +1,31 @@
-import type { FullRun, RunSummary } from "./types";
+import { Index, IndexedDB } from "flexsearch";
+import type { Id } from "flexsearch";
 
-export interface SearchableRun {
-  summary: RunSummary;
-  run: FullRun;
+export interface SearchIndexRow {
+  id: number;
+  suiteKey: string;
+  suiteLabel: string;
+  testName: string;
+  classname: string;
+  status: string;
+  features: string[];
+  message: string;
+  detail: string;
+  runId: string;
+  runStartedAt: string;
+  runFinishedAt?: string;
+  runFile: string;
   isLatestRun: boolean;
+  runOrdinal: number;
+  searchText: string;
+}
+
+export interface SearchIndexPayload {
+  schema_version: number;
+  generated_at: string;
+  index_id: string;
+  row_count: number;
+  rows: SearchIndexRow[];
 }
 
 export interface SearchResult {
@@ -25,6 +47,11 @@ export interface SearchResult {
   score: number;
 }
 
+export interface SearchSession {
+  persistent: boolean;
+  search: (query: string, suiteFilter?: string, limit?: number) => Promise<SearchResult[]>;
+}
+
 interface SearchToken {
   text: string;
   compact: string;
@@ -39,9 +66,21 @@ interface SearchField {
 }
 
 interface RankedSearchResult extends SearchResult {
-  runSortTime: number;
+  runOrdinal: number;
+  flexRank: number;
 }
 
+type SearchIndex = {
+  add: (id: number, content: string) => unknown;
+  search: (query: string, options?: { limit?: number }) => Id[] | Promise<Id[]>;
+  contain: (id: number) => boolean | Promise<boolean>;
+  clear: () => unknown;
+  mount?: (storage: unknown) => Promise<void>;
+  commit?: () => Promise<void>;
+};
+
+const SEARCH_DB_NAME = "ozone-s3-compatibility-search";
+const SEARCH_STORAGE_KEY = "ozone-s3-compatibility-search-index-id";
 const FIELD_ORDER = ["test name", "error message", "suite", "run", "class", "feature", "status"];
 const FIELD_WEIGHTS: Record<string, number> = {
   "test name": 80,
@@ -51,6 +90,12 @@ const FIELD_WEIGHTS: Record<string, number> = {
   class: 15,
   feature: 10,
   status: 6,
+};
+
+const FLEXSEARCH_OPTIONS = {
+  tokenize: "forward" as const,
+  resolution: 9,
+  cache: 100,
 };
 
 function normalizeText(value: string | null | undefined): string {
@@ -91,24 +136,16 @@ function fieldMatchesToken(field: SearchField, token: SearchToken): boolean {
   return field.normalized.includes(token.text) || field.compact.includes(token.compact);
 }
 
-function runIdentifier(summary: RunSummary, run: FullRun): string {
-  return run.run_id || run.id || summary.id || "";
-}
-
-function runMetadata(summary: RunSummary, run: FullRun): string {
+function rowFields(row: SearchIndexRow): SearchField[] {
   return [
-    runIdentifier(summary, run),
-    summary.id,
-    summary.file,
-    summary.started_at,
-    summary.finished_at,
-    run.started_at,
-    run.finished_at,
-    summary.workflow_run_url,
-    run.workflow_run_url,
-  ]
-    .filter(Boolean)
-    .join(" ");
+    makeField("test name", row.testName),
+    makeField("error message", `${row.message || ""} ${row.detail || ""}`),
+    makeField("suite", `${row.suiteKey} ${row.suiteLabel}`),
+    makeField("run", `${row.runId} ${row.runStartedAt} ${row.runFinishedAt || ""} ${row.runFile}`),
+    makeField("class", row.classname),
+    makeField("feature", (row.features || []).join(" ")),
+    makeField("status", row.status),
+  ];
 }
 
 function uniqueMatchedFields(fields: SearchField[], tokens: SearchToken[]): string[] {
@@ -129,86 +166,138 @@ function scoreMatch(fields: SearchField[], tokens: SearchToken[]): number {
   }, 0);
 }
 
-export function searchRunCases(
-  runs: SearchableRun[],
-  query: string,
-  suiteFilter = "all",
-  limit = 120
-): SearchResult[] {
-  const tokens = searchTokens(query);
-  if (!tokens.length) {
-    return [];
+function searchResultForRow(row: SearchIndexRow, tokens: SearchToken[], flexRank: number): RankedSearchResult {
+  const fields = rowFields(row);
+  return {
+    id: String(row.id),
+    suiteKey: row.suiteKey,
+    suiteLabel: row.suiteLabel,
+    testName: row.testName,
+    classname: row.classname,
+    status: row.status,
+    features: row.features || [],
+    message: row.message || "",
+    detail: row.detail || "",
+    runId: row.runId,
+    runStartedAt: row.runStartedAt,
+    runFinishedAt: row.runFinishedAt,
+    runFile: row.runFile,
+    isLatestRun: row.isLatestRun,
+    matchedFields: uniqueMatchedFields(fields, tokens),
+    score: scoreMatch(fields, tokens),
+    runOrdinal: row.runOrdinal,
+    flexRank,
+  };
+}
+
+function rowsById(payload: SearchIndexPayload): Map<number, SearchIndexRow> {
+  return new Map(payload.rows.map((row) => [row.id, row]));
+}
+
+function addRowsToIndex(index: SearchIndex, rows: SearchIndexRow[]): void {
+  rows.forEach((row) => {
+    index.add(row.id, row.searchText);
+  });
+}
+
+function safeGetStoredIndexId(): string {
+  try {
+    return window.localStorage.getItem(SEARCH_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function safeSetStoredIndexId(indexId: string): void {
+  try {
+    window.localStorage.setItem(SEARCH_STORAGE_KEY, indexId);
+  } catch {
+    // Search still works without localStorage; it just hydrates again when needed.
+  }
+}
+
+function browserSupportsIndexedDB(): boolean {
+  return typeof window !== "undefined" && typeof window.indexedDB !== "undefined";
+}
+
+async function hydratePersistentIndex(index: SearchIndex, payload: SearchIndexPayload): Promise<void> {
+  const firstRowId = payload.rows[0]?.id;
+  const storedIndexId = safeGetStoredIndexId();
+  const hasFirstRow = firstRowId === undefined ? true : await Promise.resolve(index.contain(firstRowId));
+
+  if (storedIndexId === payload.index_id && hasFirstRow) {
+    return;
   }
 
-  const results: RankedSearchResult[] = [];
+  await Promise.resolve(index.clear());
+  addRowsToIndex(index, payload.rows);
+  await index.commit?.();
+  safeSetStoredIndexId(payload.index_id);
+}
 
-  runs.forEach(({ summary, run, isLatestRun }) => {
-    const runId = runIdentifier(summary, run);
-    const runStartedAt = summary.started_at || run.started_at || "";
-    const runFinishedAt = summary.finished_at || run.finished_at;
-    const runSortTime = Date.parse(runStartedAt) || 0;
-    const runField = makeField("run", runMetadata(summary, run));
+function createSearchSession(payload: SearchIndexPayload, index: SearchIndex, persistent: boolean): SearchSession {
+  const byId = rowsById(payload);
 
-    Object.entries(run.suites || {}).forEach(([suiteKey, suite]) => {
-      if (suiteFilter !== "all" && suiteFilter !== suiteKey) {
-        return;
+  return {
+    persistent,
+    async search(query: string, suiteFilter = "all", limit = 120): Promise<SearchResult[]> {
+      const tokens = searchTokens(query);
+      if (!tokens.length) {
+        return [];
       }
 
-      const suiteLabel = suite.label || suiteKey;
-      const suiteField = makeField("suite", `${suiteKey} ${suiteLabel}`);
-      const storedCases = suite.cases || suite.non_passing_cases || [];
+      const ids = await Promise.resolve(index.search(query, { limit: payload.rows.length }));
+      const ranked: RankedSearchResult[] = [];
 
-      storedCases.forEach((entry) => {
-        const fields = [
-          makeField("test name", entry.name),
-          makeField("error message", `${entry.message || ""} ${entry.detail || ""}`),
-          suiteField,
-          runField,
-          makeField("class", entry.classname),
-          makeField("feature", (entry.features || []).join(" ")),
-          makeField("status", entry.status),
-        ];
-
-        if (!tokens.every((token) => fields.some((field) => fieldMatchesToken(field, token)))) {
+      ids.forEach((id, flexRank) => {
+        const row = byId.get(Number(id));
+        if (!row || (suiteFilter !== "all" && row.suiteKey !== suiteFilter)) {
           return;
         }
-
-        results.push({
-          id: [runId, suiteKey, entry.classname || "", entry.name, entry.status].join(":"),
-          suiteKey,
-          suiteLabel,
-          testName: entry.name,
-          classname: entry.classname,
-          status: entry.status,
-          features: entry.features || [],
-          message: entry.message || "",
-          detail: entry.detail || "",
-          runId,
-          runStartedAt,
-          runFinishedAt,
-          runFile: summary.file,
-          isLatestRun,
-          matchedFields: uniqueMatchedFields(fields, tokens),
-          score: scoreMatch(fields, tokens),
-          runSortTime,
-        });
+        ranked.push(searchResultForRow(row, tokens, flexRank));
       });
-    });
-  });
 
-  return results
-    .sort((left, right) => {
-      if (right.runSortTime !== left.runSortTime) {
-        return right.runSortTime - left.runSortTime;
-      }
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-      if (left.suiteLabel !== right.suiteLabel) {
-        return left.suiteLabel.localeCompare(right.suiteLabel);
-      }
-      return left.testName.localeCompare(right.testName);
-    })
-    .slice(0, limit)
-    .map(({ runSortTime: _runSortTime, ...result }) => result);
+      return ranked
+        .sort((left, right) => {
+          if (left.runOrdinal !== right.runOrdinal) {
+            return left.runOrdinal - right.runOrdinal;
+          }
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+          if (left.flexRank !== right.flexRank) {
+            return left.flexRank - right.flexRank;
+          }
+          if (left.suiteLabel !== right.suiteLabel) {
+            return left.suiteLabel.localeCompare(right.suiteLabel);
+          }
+          return left.testName.localeCompare(right.testName);
+        })
+        .slice(0, limit)
+        .map(({ runOrdinal: _runOrdinal, flexRank: _flexRank, ...result }) => result);
+    },
+  };
+}
+
+export async function createInMemorySearchSession(payload: SearchIndexPayload): Promise<SearchSession> {
+  const index = new Index(FLEXSEARCH_OPTIONS) as unknown as SearchIndex;
+  addRowsToIndex(index, payload.rows);
+  return createSearchSession(payload, index, false);
+}
+
+export async function createPersistentSearchSession(payload: SearchIndexPayload): Promise<SearchSession> {
+  if (!browserSupportsIndexedDB()) {
+    return createInMemorySearchSession(payload);
+  }
+
+  try {
+    const index = new Index({ ...FLEXSEARCH_OPTIONS, commit: false }) as unknown as SearchIndex;
+
+    await index.mount?.(new IndexedDB(SEARCH_DB_NAME));
+    await hydratePersistentIndex(index, payload);
+    return createSearchSession(payload, index, true);
+  } catch (error) {
+    console.warn("Falling back to in-memory search index after IndexedDB setup failed.", error);
+    return createInMemorySearchSession(payload);
+  }
 }

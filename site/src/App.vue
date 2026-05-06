@@ -17,9 +17,9 @@ import {
   statusClass,
   suiteLabel,
 } from "./lib/report";
-import { searchRunCases } from "./lib/search";
+import { createPersistentSearchSession } from "./lib/search";
 import type { FullRun, HistoryTogglePayload, IndexPayload, RunSummary } from "./lib/types";
-import type { SearchResult, SearchableRun } from "./lib/search";
+import type { SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
 
 interface SummaryCard {
   key: string;
@@ -60,10 +60,12 @@ const visibleArchivedCount = ref<number>(HISTORY_BATCH_SIZE);
 const pendingNavigationTarget = ref<string>("");
 const searchQuery = ref<string>("");
 const searchSuiteFilter = ref<string>("all");
-const searchRuns = ref<SearchableRun[]>([]);
-const searchRunsLoaded = ref<boolean>(false);
-const searchRunsLoading = ref<boolean>(false);
-const searchRunsError = ref<string>("");
+const searchIndexPayload = ref<SearchIndexPayload | null>(null);
+const searchSession = ref<SearchSession | null>(null);
+const searchResults = ref<SearchResult[]>([]);
+const searchLoading = ref<boolean>(false);
+const searchError = ref<string>("");
+let searchRequestSequence = 0;
 
 const expandedHistory = reactive<Record<string, boolean>>({});
 const runDetailsById = reactive<Record<string, FullRun | undefined>>({});
@@ -87,9 +89,7 @@ const canLoadMoreHistory = computed(() => visibleArchivedCount.value < archivedS
 const suiteOrder = computed<string[]>(() => index.value?.suite_order || []);
 const trimmedSearchQuery = computed<string>(() => searchQuery.value.trim());
 const searchActive = computed<boolean>(() => trimmedSearchQuery.value.length > 0);
-const searchResults = computed<SearchResult[]>(() =>
-  searchRunCases(searchRuns.value, trimmedSearchQuery.value, searchSuiteFilter.value, SEARCH_RESULT_LIMIT)
-);
+const searchIndexLoaded = computed<boolean>(() => Boolean(searchSession.value));
 const searchResultSummary = computed<string>(() => {
   const count = searchResults.value.length;
   const suffix = count === SEARCH_RESULT_LIMIT ? " shown" : "";
@@ -129,10 +129,8 @@ watch(
   }
 );
 
-watch([trimmedSearchQuery, searchSuiteFilter], ([query]) => {
-  if (query) {
-    void ensureSearchRunsLoaded();
-  }
+watch([trimmedSearchQuery, searchSuiteFilter], () => {
+  void refreshSearchResults();
 });
 
 function deltaClass(delta: number | null): string {
@@ -218,50 +216,89 @@ async function ensureHistoryRunLoaded(summary: RunSummary): Promise<void> {
   }
 }
 
-async function ensureSearchRunsLoaded(): Promise<void> {
-  if (!index.value || searchRunsLoaded.value || searchRunsLoading.value) {
+async function ensureSearchSession(): Promise<SearchSession | null> {
+  if (searchSession.value) {
+    return searchSession.value;
+  }
+
+  searchLoading.value = true;
+  searchError.value = "";
+
+  try {
+    const payload =
+      searchIndexPayload.value ||
+      (await fetchJson<SearchIndexPayload>("./data/search-index.json", "Failed to load search index"));
+    searchIndexPayload.value = payload;
+    searchSession.value = await createPersistentSearchSession(payload);
+    return searchSession.value;
+  } catch (error) {
+    searchError.value = errorMessageOf(error);
+    return null;
+  } finally {
+    searchLoading.value = false;
+  }
+}
+
+async function refreshSearchResults(): Promise<void> {
+  const requestId = ++searchRequestSequence;
+  const query = trimmedSearchQuery.value;
+  const suiteFilter = searchSuiteFilter.value;
+
+  if (!query) {
+    searchResults.value = [];
     return;
   }
 
-  searchRunsLoading.value = true;
-  searchRunsError.value = "";
+  const session = await ensureSearchSession();
+  if (
+    requestId !== searchRequestSequence ||
+    query !== trimmedSearchQuery.value ||
+    suiteFilter !== searchSuiteFilter.value
+  ) {
+    return;
+  }
+  if (!session) {
+    searchResults.value = [];
+    return;
+  }
 
+  searchLoading.value = true;
+  searchError.value = "";
   try {
-    searchRuns.value = await Promise.all(
-      index.value.runs.map(async (summary, runIndex) => {
-        const isLatestRun = runIndex === 0;
-        let run = isLatestRun ? latestRun.value : runDetailsById[summary.id];
-
-        if (!run) {
-          run = await fetchRun(summary.file);
-        }
-
-        if (isLatestRun) {
-          latestRun.value = run;
-        } else {
-          runDetailsById[summary.id] = run;
-        }
-
-        return { summary, run, isLatestRun };
-      })
-    );
-    searchRunsLoaded.value = true;
+    const results = await session.search(query, suiteFilter, SEARCH_RESULT_LIMIT);
+    if (
+      requestId === searchRequestSequence &&
+      query === trimmedSearchQuery.value &&
+      suiteFilter === searchSuiteFilter.value
+    ) {
+      searchResults.value = results;
+    }
   } catch (error) {
-    searchRunsError.value = errorMessageOf(error);
+    if (
+      requestId === searchRequestSequence &&
+      query === trimmedSearchQuery.value &&
+      suiteFilter === searchSuiteFilter.value
+    ) {
+      searchResults.value = [];
+      searchError.value = errorMessageOf(error);
+    }
   } finally {
-    searchRunsLoading.value = false;
+    if (requestId === searchRequestSequence) {
+      searchLoading.value = false;
+    }
   }
 }
 
 function clearSearch(): void {
   searchQuery.value = "";
   searchSuiteFilter.value = "all";
+  searchResults.value = [];
 }
 
 function retrySearchLoad(): void {
-  searchRunsLoaded.value = false;
-  searchRunsError.value = "";
-  void ensureSearchRunsLoaded();
+  searchSession.value = null;
+  searchError.value = "";
+  void refreshSearchResults();
 }
 
 async function openSearchResult(result: SearchResult): Promise<void> {
@@ -567,7 +604,11 @@ onBeforeUnmount(() => {
               <h2>Test Case Search</h2>
             </div>
             <p class="panel-note">
-              {{ searchRunsLoaded ? `${searchRuns.length} runs indexed` : "Run details load on first search." }}
+              {{
+                searchIndexLoaded && searchIndexPayload
+                  ? `${searchIndexPayload.row_count} cases indexed ${searchSession?.persistent ? "in IndexedDB" : "in memory"}`
+                  : "Persistent browser search loads on first query."
+              }}
             </p>
           </div>
 
@@ -597,9 +638,9 @@ onBeforeUnmount(() => {
           <div v-if="!searchActive" class="loader empty-state">
             Search stored cases by suite, test name, run id, run date, or failure text.
           </div>
-          <div v-else-if="searchRunsLoading" class="loader">Indexing run details…</div>
-          <div v-else-if="searchRunsError" class="loader history-detail-state">
-            {{ searchRunsError }}
+          <div v-else-if="searchLoading" class="loader">Loading persistent search index…</div>
+          <div v-else-if="searchError" class="loader history-detail-state">
+            {{ searchError }}
             <button class="inline-button" type="button" @click="retrySearchLoad">Retry</button>
           </div>
           <div v-else class="search-results">
