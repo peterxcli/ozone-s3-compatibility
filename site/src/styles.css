@@ -42,6 +42,14 @@ body {
   overflow-x: hidden;
 }
 
+body.modal-open {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
 code,
 .mono {
   font-family: "IBM Plex Mono", monospace;
@@ -976,10 +984,13 @@ th {
   inset: 0;
   z-index: 100;
   display: grid;
-  place-items: center;
+  justify-items: center;
+  align-items: start;
   padding: 1rem;
-  background: rgba(18, 38, 63, 0.46);
-  backdrop-filter: blur(7px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(18, 38, 63, 0.56);
 }
 
 .case-modal {
@@ -987,8 +998,7 @@ th {
   display: grid;
   gap: 1rem;
   width: min(980px, 100%);
-  max-height: calc(100vh - 2rem);
-  overflow: auto;
+  overflow: visible;
   padding: 1.25rem;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: var(--radius-md);
@@ -1281,13 +1291,13 @@ a:hover {
   }
 
   .case-modal-backdrop {
-    place-items: stretch;
+    justify-items: stretch;
+    align-items: start;
     padding: 0.5rem;
   }
 
   .case-modal {
     width: 100%;
-    max-height: calc(100vh - 1rem);
     padding: 1rem;
   }
 

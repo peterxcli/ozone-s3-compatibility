@@ -91,6 +91,7 @@ const caseSnippet = reactive<CaseSnippetState>({
 });
 let searchRequestSequence = 0;
 let snippetRequestSequence = 0;
+let pageScrollYBeforeModal = 0;
 let searchSessionPromise: Promise<SearchSession | null> | null = null;
 let searchPreloadScheduled = false;
 let searchPreloadTimer: number | null = null;
@@ -390,6 +391,25 @@ function retrySearchLoad(): void {
   void refreshSearchResults();
 }
 
+function lockPageScroll(): void {
+  if (document.body.classList.contains("modal-open")) {
+    return;
+  }
+  pageScrollYBeforeModal = window.scrollY;
+  document.body.style.top = `-${pageScrollYBeforeModal}px`;
+  document.body.classList.add("modal-open");
+}
+
+function unlockPageScroll(): void {
+  if (!document.body.classList.contains("modal-open")) {
+    return;
+  }
+  document.body.classList.remove("modal-open");
+  document.body.style.top = "";
+  window.scrollTo(0, pageScrollYBeforeModal);
+  pageScrollYBeforeModal = 0;
+}
+
 function fallbackSnippetForResult(result: SearchResult): string {
   if (result.sourceSnippet) {
     return result.sourceSnippet;
@@ -463,6 +483,7 @@ async function loadSearchResultSnippet(result: SearchResult, requestId: number):
 }
 
 function openSearchResultModal(result: SearchResult): void {
+  lockPageScroll();
   selectedSearchResult.value = result;
   const requestId = ++snippetRequestSequence;
   void loadSearchResultSnippet(result, requestId);
@@ -472,6 +493,7 @@ function closeSearchResultModal(): void {
   selectedSearchResult.value = null;
   snippetRequestSequence += 1;
   resetCaseSnippet();
+  unlockPageScroll();
 }
 
 async function openSelectedSearchRun(): Promise<void> {
@@ -680,6 +702,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", handleWindowResize);
   cancelSearchSessionPreload();
   destroyHistoryObserver();
+  unlockPageScroll();
 });
 </script>
 
