@@ -67,6 +67,7 @@ jobs:
           cp "${source_dir}/styles.css" .pages-repo/styles.css
           cp "${source_dir}/social-preview.svg" .pages-repo/social-preview.svg
           cp "${source_dir}/social-preview.png" .pages-repo/social-preview.png
+          cp "${source_dir}/CNAME" .pages-repo/CNAME
           if [ -f "${source_dir}/data/search-index.json" ]; then
             mkdir -p .pages-repo/data
             cp "${source_dir}/data/search-index.json" .pages-repo/data/search-index.json
@@ -79,6 +80,7 @@ jobs:
           git -C .pages-repo config user.name "github-actions[bot]"
           git -C .pages-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C .pages-repo add index.html app.js styles.css social-preview.svg social-preview.png .nojekyll
+          git -C .pages-repo add CNAME
           if [ -f .pages-repo/data/search-index.json ]; then
             git -C .pages-repo add data/search-index.json
           fi
