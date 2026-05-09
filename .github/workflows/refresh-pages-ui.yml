@@ -1,6 +1,9 @@
 name: refresh-pages-ui
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
