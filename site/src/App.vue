@@ -33,7 +33,7 @@ import {
 import { createPersistentSearchSession } from "./lib/search";
 import { highlightSearchMatch } from "./lib/searchHighlight";
 import type { FullRun, HistoryTogglePayload, IndexPayload, RunSummary } from "./lib/types";
-import type { SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
+import type { SearchIndexLoadProgress, SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
 import type { SharedCaseIdentity } from "./lib/shareState";
 
 interface SummaryCard {
@@ -88,6 +88,7 @@ const searchIndexPayload = ref<SearchIndexPayload | null>(null);
 const searchSession = ref<SearchSession | null>(null);
 const searchResults = ref<SearchResult[]>([]);
 const searchLoading = ref<boolean>(false);
+const searchIndexProgress = ref<SearchIndexLoadProgress | null>(null);
 const searchError = ref<string>("");
 const selectedSearchResult = ref<SearchResult | null>(null);
 const caseSnippet = reactive<CaseSnippetState>({
@@ -132,6 +133,59 @@ const suiteOrder = computed<string[]>(() => index.value?.suite_order || []);
 const trimmedSearchQuery = computed<string>(() => searchQuery.value.trim());
 const searchActive = computed<boolean>(() => trimmedSearchQuery.value.length > 0);
 const searchIndexLoaded = computed<boolean>(() => Boolean(searchSession.value));
+const searchIndexProgressVisible = computed<boolean>(() => {
+  const progress = searchIndexProgress.value;
+  return Boolean(progress && progress.phase !== "ready" && progress.phase !== "error");
+});
+const searchIndexProgressPercent = computed<number | null>(() => {
+  const progress = searchIndexProgress.value;
+  if (!progress || progress.totalRows <= 0) {
+    return null;
+  }
+  return Math.max(0, Math.min(100, Math.round((progress.indexedRows / progress.totalRows) * 100)));
+});
+const searchIndexProgressText = computed<string>(() => {
+  const progress = searchIndexProgress.value;
+  const rowCount = progress?.totalRows || searchIndexPayload.value?.row_count || 0;
+  const totalRows = rowCount.toLocaleString();
+  const indexedRows = (progress?.indexedRows || 0).toLocaleString();
+
+  if (!progress) {
+    return searchIndexLoaded.value && searchIndexPayload.value
+      ? `${searchIndexPayload.value.row_count.toLocaleString()} cases indexed ${
+          searchSession.value?.persistent ? "in IndexedDB" : "in memory"
+        }`
+      : "Persistent browser search loads in the background.";
+  }
+
+  if (progress.phase === "scheduled") {
+    return "Search index preload scheduled.";
+  }
+  if (progress.phase === "downloading") {
+    return "Downloading search index.";
+  }
+  if (progress.phase === "opening-cache") {
+    return "Opening browser search cache.";
+  }
+  if (progress.phase === "checking-cache") {
+    return "Checking browser search cache.";
+  }
+  if (progress.phase === "indexing") {
+    const location = progress.persistent ? "into IndexedDB" : "in memory";
+    return `Indexing ${indexedRows} of ${totalRows} cases ${location}.`;
+  }
+  if (progress.phase === "saving-cache") {
+    return `Saving ${totalRows} indexed cases to browser cache.`;
+  }
+  if (progress.phase === "ready") {
+    if (progress.fromCache) {
+      return `${totalRows} cases ready from IndexedDB cache.`;
+    }
+    return `${totalRows} cases indexed ${progress.persistent ? "in IndexedDB" : "in memory"}.`;
+  }
+
+  return "Search index load failed.";
+});
 const searchResultSummary = computed<string>(() => {
   const count = searchResults.value.length;
   const suffix = count === SEARCH_RESULT_LIMIT ? " shown" : "";
@@ -295,6 +349,13 @@ function scheduleSearchSessionPreload(): void {
   }
 
   searchPreloadScheduled = true;
+  searchIndexProgress.value = {
+    phase: "scheduled",
+    indexedRows: 0,
+    totalRows: searchIndexPayload.value?.row_count || 0,
+    persistent: true,
+    fromCache: false,
+  };
   const preload = () => {
     searchPreloadTimer = null;
     searchPreloadIdleHandle = null;
@@ -333,14 +394,32 @@ async function ensureSearchSession(): Promise<SearchSession | null> {
     searchError.value = "";
 
     try {
+      searchIndexProgress.value = {
+        phase: "downloading",
+        indexedRows: 0,
+        totalRows: searchIndexPayload.value?.row_count || 0,
+        persistent: true,
+        fromCache: false,
+      };
       const payload =
         searchIndexPayload.value ||
         (await fetchJson<SearchIndexPayload>("./data/search-index.json", "Failed to load search index"));
       searchIndexPayload.value = payload;
-      searchSession.value = await createPersistentSearchSession(payload);
+      searchSession.value = await createPersistentSearchSession(payload, {
+        onProgress: (progress) => {
+          searchIndexProgress.value = progress;
+        },
+      });
       return searchSession.value;
     } catch (error) {
       searchError.value = errorMessageOf(error);
+      searchIndexProgress.value = {
+        phase: "error",
+        indexedRows: 0,
+        totalRows: searchIndexPayload.value?.row_count || 0,
+        persistent: true,
+        fromCache: false,
+      };
       return null;
     } finally {
       searchLoading.value = false;
@@ -1029,12 +1108,35 @@ onBeforeUnmount(() => {
               <h2>Test Case Search</h2>
             </div>
             <p class="panel-note">
-              {{
-                searchIndexLoaded && searchIndexPayload
-                  ? `${searchIndexPayload.row_count} cases indexed ${searchSession?.persistent ? "in IndexedDB" : "in memory"}`
-                  : "Persistent browser search loads in the background."
-              }}
+              {{ searchIndexProgressText }}
             </p>
+          </div>
+
+          <div
+            v-if="searchIndexProgressVisible"
+            class="search-index-progress"
+            role="status"
+            aria-live="polite"
+          >
+            <div class="search-index-progress-head">
+              <span>{{ searchIndexProgressText }}</span>
+              <span v-if="searchIndexProgressPercent !== null" class="mono">
+                {{ searchIndexProgressPercent }}%
+              </span>
+            </div>
+            <div
+              class="search-index-progress-track"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              :aria-valuenow="searchIndexProgressPercent ?? undefined"
+            >
+              <div
+                class="search-index-progress-fill"
+                :class="{ indeterminate: searchIndexProgressPercent === null }"
+                :style="{ width: `${searchIndexProgressPercent ?? 22}%` }"
+              ></div>
+            </div>
           </div>
 
           <div class="search-controls">
@@ -1063,7 +1165,7 @@ onBeforeUnmount(() => {
           <div v-if="!searchActive" class="loader empty-state">
             Search stored cases by suite, test name, run id, run date, or failure text.
           </div>
-          <div v-else-if="searchLoading" class="loader">Loading persistent search index…</div>
+          <div v-else-if="searchLoading" class="loader">{{ searchIndexProgressText }}</div>
           <div v-else-if="searchError" class="loader history-detail-state">
             {{ searchError }}
             <button class="inline-button" type="button" @click="retrySearchLoad">Retry</button>

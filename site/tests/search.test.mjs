@@ -315,6 +315,30 @@ test("can narrow matches to a selected suite", async () => {
   assert.equal(results.length, 0);
 });
 
+test("reports row indexing progress while building a search session", async () => {
+  const progressEvents = [];
+  const session = await createInMemorySearchSession(searchPayload, {
+    progressBatchSize: 2,
+    onProgress: (progress) => {
+      progressEvents.push(progress);
+    },
+  });
+
+  assert.equal(session.persistent, false);
+  assert(
+    progressEvents.some(
+      (progress) => progress.phase === "indexing" && progress.indexedRows === 2 && progress.totalRows === 5
+    )
+  );
+  assert.deepEqual(progressEvents.at(-1), {
+    phase: "ready",
+    indexedRows: 5,
+    totalRows: 5,
+    persistent: false,
+    fromCache: false,
+  });
+});
+
 test("falls back to in-memory search when IndexedDB is unavailable", async () => {
   const session = await createPersistentSearchSession(searchPayload);
   const results = await session.search("accessdenied");

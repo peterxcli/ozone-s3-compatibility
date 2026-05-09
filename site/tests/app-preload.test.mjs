@@ -13,3 +13,11 @@ test("preloads the persistent search session after the report shell is visible",
   assert.match(appSource, /requestIdleCallback/);
   assert.match(appSource, /void ensureSearchSession\(\);/);
 });
+
+test("shows search index load progress before a query is entered", () => {
+  assert.match(appSource, /const searchIndexProgress = ref<SearchIndexLoadProgress \| null>\(null\)/);
+  assert.match(appSource, /const searchIndexProgressText = computed<string>\(\(\) => \{/);
+  assert.match(appSource, /v-if="searchIndexProgressVisible"/);
+  assert.match(appSource, /role="progressbar"/);
+  assert.match(appSource, /search-index-progress-fill/);
+});

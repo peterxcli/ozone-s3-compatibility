@@ -63,6 +63,29 @@ export interface SearchOptions {
   dedupe?: boolean;
 }
 
+export type SearchIndexLoadPhase =
+  | "scheduled"
+  | "downloading"
+  | "opening-cache"
+  | "checking-cache"
+  | "indexing"
+  | "saving-cache"
+  | "ready"
+  | "error";
+
+export interface SearchIndexLoadProgress {
+  phase: SearchIndexLoadPhase;
+  indexedRows: number;
+  totalRows: number;
+  persistent: boolean;
+  fromCache: boolean;
+}
+
+export interface SearchSessionOptions {
+  onProgress?: (progress: SearchIndexLoadProgress) => void;
+  progressBatchSize?: number;
+}
+
 export interface SearchSession {
   persistent: boolean;
   search: (query: string, suiteFilter?: string, limit?: number, options?: SearchOptions) => Promise<SearchResult[]>;
@@ -118,6 +141,7 @@ const FLEXSEARCH_OPTIONS = {
   resolution: 9,
   cache: 100,
 };
+const DEFAULT_PROGRESS_BATCH_SIZE = 500;
 
 function normalizeText(value: string | null | undefined): string {
   return String(value || "")
@@ -298,10 +322,57 @@ function removeDuplicateHistory(
   });
 }
 
-function addRowsToIndex(index: SearchIndex, rows: SearchIndexRow[]): void {
-  rows.forEach((row) => {
-    index.add(row.id, row.searchText);
-  });
+function progressBatchSize(options: SearchSessionOptions): number {
+  const batchSize = Number(options.progressBatchSize || DEFAULT_PROGRESS_BATCH_SIZE);
+  return Number.isFinite(batchSize) && batchSize > 0 ? Math.floor(batchSize) : DEFAULT_PROGRESS_BATCH_SIZE;
+}
+
+function reportProgress(options: SearchSessionOptions, progress: SearchIndexLoadProgress): void {
+  options.onProgress?.(progress);
+}
+
+async function yieldToBrowser(): Promise<void> {
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+}
+
+async function addRowsToIndex(
+  index: SearchIndex,
+  rows: SearchIndexRow[],
+  options: SearchSessionOptions,
+  persistent: boolean,
+): Promise<void> {
+  const batchSize = progressBatchSize(options);
+  const shouldReportProgress = Boolean(options.onProgress);
+
+  if (!rows.length) {
+    reportProgress(options, {
+      phase: "indexing",
+      indexedRows: 0,
+      totalRows: 0,
+      persistent,
+      fromCache: false,
+    });
+    return;
+  }
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    await Promise.resolve(index.add(row.id, row.searchText));
+
+    const indexedRows = rowIndex + 1;
+    if (indexedRows % batchSize === 0 || indexedRows === rows.length) {
+      reportProgress(options, {
+        phase: "indexing",
+        indexedRows,
+        totalRows: rows.length,
+        persistent,
+        fromCache: false,
+      });
+      if (shouldReportProgress) {
+        await yieldToBrowser();
+      }
+    }
+  }
 }
 
 function safeGetStoredIndexId(): string {
@@ -324,19 +395,51 @@ function browserSupportsIndexedDB(): boolean {
   return typeof window !== "undefined" && typeof window.indexedDB !== "undefined";
 }
 
-async function hydratePersistentIndex(index: SearchIndex, payload: SearchIndexPayload): Promise<void> {
+async function hydratePersistentIndex(
+  index: SearchIndex,
+  payload: SearchIndexPayload,
+  options: SearchSessionOptions,
+): Promise<void> {
   const firstRowId = payload.rows[0]?.id;
   const storedIndexId = safeGetStoredIndexId();
+  reportProgress(options, {
+    phase: "checking-cache",
+    indexedRows: 0,
+    totalRows: payload.rows.length,
+    persistent: true,
+    fromCache: false,
+  });
   const hasFirstRow = firstRowId === undefined ? true : await Promise.resolve(index.contain(firstRowId));
 
   if (storedIndexId === payload.index_id && hasFirstRow) {
+    reportProgress(options, {
+      phase: "ready",
+      indexedRows: payload.rows.length,
+      totalRows: payload.rows.length,
+      persistent: true,
+      fromCache: true,
+    });
     return;
   }
 
   await Promise.resolve(index.clear());
-  addRowsToIndex(index, payload.rows);
+  await addRowsToIndex(index, payload.rows, options, true);
+  reportProgress(options, {
+    phase: "saving-cache",
+    indexedRows: payload.rows.length,
+    totalRows: payload.rows.length,
+    persistent: true,
+    fromCache: false,
+  });
   await index.commit?.();
   safeSetStoredIndexId(payload.index_id);
+  reportProgress(options, {
+    phase: "ready",
+    indexedRows: payload.rows.length,
+    totalRows: payload.rows.length,
+    persistent: true,
+    fromCache: false,
+  });
 }
 
 function createSearchSession(payload: SearchIndexPayload, index: SearchIndex, persistent: boolean): SearchSession {
@@ -387,25 +490,45 @@ function createSearchSession(payload: SearchIndexPayload, index: SearchIndex, pe
   };
 }
 
-export async function createInMemorySearchSession(payload: SearchIndexPayload): Promise<SearchSession> {
+export async function createInMemorySearchSession(
+  payload: SearchIndexPayload,
+  options: SearchSessionOptions = {},
+): Promise<SearchSession> {
   const index = new Index(FLEXSEARCH_OPTIONS) as unknown as SearchIndex;
-  addRowsToIndex(index, payload.rows);
+  await addRowsToIndex(index, payload.rows, options, false);
+  reportProgress(options, {
+    phase: "ready",
+    indexedRows: payload.rows.length,
+    totalRows: payload.rows.length,
+    persistent: false,
+    fromCache: false,
+  });
   return createSearchSession(payload, index, false);
 }
 
-export async function createPersistentSearchSession(payload: SearchIndexPayload): Promise<SearchSession> {
+export async function createPersistentSearchSession(
+  payload: SearchIndexPayload,
+  options: SearchSessionOptions = {},
+): Promise<SearchSession> {
   if (!browserSupportsIndexedDB()) {
-    return createInMemorySearchSession(payload);
+    return createInMemorySearchSession(payload, options);
   }
 
   try {
     const index = new Index({ ...FLEXSEARCH_OPTIONS, commit: false }) as unknown as SearchIndex;
 
+    reportProgress(options, {
+      phase: "opening-cache",
+      indexedRows: 0,
+      totalRows: payload.rows.length,
+      persistent: true,
+      fromCache: false,
+    });
     await index.mount?.(new IndexedDB(SEARCH_DB_NAME));
-    await hydratePersistentIndex(index, payload);
+    await hydratePersistentIndex(index, payload, options);
     return createSearchSession(payload, index, true);
   } catch (error) {
     console.warn("Falling back to in-memory search index after IndexedDB setup failed.", error);
-    return createInMemorySearchSession(payload);
+    return createInMemorySearchSession(payload, options);
   }
 }
