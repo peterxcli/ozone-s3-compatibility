@@ -10,22 +10,42 @@ import {
   formatDate,
   orderedSuitesFromRun,
   runScope,
+  summarizeFeatureComparisons,
+  suiteLabel,
 } from "../lib/report";
-import type { FullRun } from "../lib/types";
+import type { FeatureComparisonSummary, FullRun, RunLike } from "../lib/types";
+
+interface RunSuiteFeatureMovement {
+  key: string;
+  label: string;
+  featureMovement: FeatureComparisonSummary;
+}
 
 const props = withDefaults(
   defineProps<{
     run: FullRun;
+    previousRun?: RunLike | null;
     suiteOrder?: string[];
     defaultSuiteOpen?: boolean;
   }>(),
   {
+    previousRun: null,
     suiteOrder: () => [],
     defaultSuiteOpen: true,
   }
 );
 
 const orderedSuites = computed(() => orderedSuitesFromRun(props.run, props.suiteOrder));
+const previousSuites = computed(() => props.previousRun?.suites || {});
+const runFeatureMovements = computed<RunSuiteFeatureMovement[]>(() =>
+  orderedSuites.value
+    .map((entry) => ({
+      key: entry.key,
+      label: suiteLabel(entry.key),
+      featureMovement: summarizeFeatureComparisons(entry.suite, previousSuites.value[entry.key] || null),
+    }))
+    .filter((entry) => entry.featureMovement.comparable > 0)
+);
 const execution = computed(() => executionForRun(props.run));
 const scopeInfo = computed(() => runScope(props.run));
 const ozoneCommit = computed(() => props.run.sources?.ozone?.short_commit || "unknown");
@@ -40,6 +60,10 @@ const showMintModeChip = computed(() => execution.value && execution.value.mint_
 const showDatanodesChip = computed(
   () => execution.value && execution.value.ozone_datanodes !== DEFAULT_OZONE_DATANODES
 );
+
+function featureCountText(count: number, state: "improved" | "degraded"): string {
+  return `${count} feature${count === 1 ? "" : "s"} ${state}`;
+}
 </script>
 
 <template>
@@ -60,12 +84,25 @@ const showDatanodesChip = computed(
       <span v-if="showDatanodesChip" class="meta-chip">{{ execution?.ozone_datanodes }} datanodes</span>
     </div>
 
+    <div v-if="runFeatureMovements.length" class="run-feature-summary">
+      <div v-for="entry in runFeatureMovements" :key="entry.key" class="run-feature-summary-item">
+        <span class="run-feature-summary-suite">{{ entry.label }}</span>
+        <span class="feature-rollup-chip improved">
+          {{ featureCountText(entry.featureMovement.improved, "improved") }}
+        </span>
+        <span class="feature-rollup-chip regressed">
+          {{ featureCountText(entry.featureMovement.regressed, "degraded") }}
+        </span>
+      </div>
+    </div>
+
     <div class="suite-grid">
       <SuiteCard
         v-for="entry in orderedSuites"
         :key="entry.key"
         :suite-key="entry.key"
         :suite="entry.suite"
+        :previous-suite="previousSuites[entry.key] || null"
         :open-by-default="defaultSuiteOpen"
       />
     </div>

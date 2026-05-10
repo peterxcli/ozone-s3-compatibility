@@ -1,23 +1,42 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 
-import { CASE_BATCH_SIZE, formatPercent, statusClass } from "../lib/report";
-import type { FeatureSummaryRecord, StoredCaseEntry, SuiteRecord } from "../lib/types";
+import {
+  CASE_BATCH_SIZE,
+  compareFeatureWithPrevious,
+  formatPercent,
+  formatRateDelta,
+  statusClass,
+  summarizeFeatureComparisons,
+} from "../lib/report";
+import type {
+  CaseStatusChange,
+  FeatureComparison,
+  FeatureComparisonSummary,
+  FeatureSummaryRecord,
+  StoredCaseEntry,
+  SuiteRecord,
+} from "../lib/types";
 
 interface FeaturePanel {
   key: string;
   label: string;
   summary: FeatureSummaryRecord["summary"];
   entries: StoredCaseEntry[];
+  comparison: FeatureComparison;
 }
+
+const CASE_CHANGE_PREVIEW_LIMIT = 12;
 
 const props = withDefaults(
   defineProps<{
     suiteKey: string;
     suite: SuiteRecord;
+    previousSuite?: SuiteRecord | null;
     openByDefault?: boolean;
   }>(),
   {
+    previousSuite: null,
     openByDefault: true,
   }
 );
@@ -28,6 +47,9 @@ const featureCaseDisplayCount = reactive<Record<string, number>>({});
 const cases = computed<StoredCaseEntry[]>(() => props.suite.cases || props.suite.non_passing_cases || []);
 const failedOrErrored = computed<number>(() => (props.suite.summary?.failed || 0) + (props.suite.summary?.errored || 0));
 const statusLabel = computed<string>(() => String(props.suite.status || "unknown").replace(/_/g, " "));
+const featureMovement = computed<FeatureComparisonSummary>(() =>
+  summarizeFeatureComparisons(props.suite, props.previousSuite)
+);
 const featurePanels = computed<FeaturePanel[]>(() => {
   const caseBuckets = new Map<string, StoredCaseEntry[]>();
   const unmatchedCases: StoredCaseEntry[] = [];
@@ -51,6 +73,7 @@ const featurePanels = computed<FeaturePanel[]>(() => {
     label: feature.label,
     summary: feature.summary,
     entries: caseBuckets.get(feature.name) || [],
+    comparison: compareFeatureWithPrevious(props.suite, props.previousSuite, feature.name),
   }));
 
   if (unmatchedCases.length) {
@@ -66,6 +89,13 @@ const featurePanels = computed<FeaturePanel[]>(() => {
         skipped: 0,
       },
       entries: unmatchedCases,
+      comparison: {
+        previousRate: null,
+        delta: null,
+        direction: "unknown",
+        nowPassing: [],
+        noLongerPassing: [],
+      },
     });
   }
 
@@ -106,6 +136,37 @@ function emptyFeatureMessage(): string {
     return "No stored case detail for this feature. Passing cases are not archived in this suite.";
   }
   return "No stored case detail for this feature.";
+}
+
+function featureComparisonClass(comparison: FeatureComparison): Record<string, boolean> {
+  return {
+    "feature-trend-improved": comparison.direction === "improved",
+    "feature-trend-regressed": comparison.direction === "regressed",
+  };
+}
+
+function featureDeltaClass(comparison: FeatureComparison): string {
+  return `feature-delta-${comparison.direction}`;
+}
+
+function hasCaseChanges(comparison: FeatureComparison): boolean {
+  return Boolean(comparison.nowPassing.length || comparison.noLongerPassing.length);
+}
+
+function visibleCaseChanges(changes: CaseStatusChange[]): CaseStatusChange[] {
+  return changes.slice(0, CASE_CHANGE_PREVIEW_LIMIT);
+}
+
+function hiddenCaseChangeCount(changes: CaseStatusChange[]): number {
+  return Math.max(0, changes.length - CASE_CHANGE_PREVIEW_LIMIT);
+}
+
+function caseStatusLabel(status: string): string {
+  return String(status || "unknown").replace(/_/g, " ");
+}
+
+function featureCountText(count: number, state: "improved" | "degraded"): string {
+  return `${count} feature${count === 1 ? "" : "s"} ${state}`;
 }
 
 function handleToggle(event: Event): void {
@@ -157,6 +218,15 @@ function handleToggle(event: Event): void {
         </div>
       </div>
 
+      <div v-if="featureMovement.comparable" class="feature-rollup suite-feature-rollup">
+        <span class="feature-rollup-chip improved">
+          {{ featureCountText(featureMovement.improved, "improved") }}
+        </span>
+        <span class="feature-rollup-chip regressed">
+          {{ featureCountText(featureMovement.regressed, "degraded") }}
+        </span>
+      </div>
+
       <div v-if="!(suite.feature_summaries || []).length" class="loader">No feature summary was generated for this suite.</div>
       <div v-else class="feature-overview">
         <div class="feature-overview-top">
@@ -173,13 +243,27 @@ function handleToggle(event: Event): void {
           <span>Skipped</span>
         </div>
 
-        <details v-for="panel in featurePanels" :key="panel.key" class="feature-overview-item">
+        <details
+          v-for="panel in featurePanels"
+          :key="panel.key"
+          class="feature-overview-item"
+          :class="featureComparisonClass(panel.comparison)"
+        >
           <summary class="feature-overview-summary">
             <span class="feature-cell feature-cell-name">
               <span class="feature-title">{{ panel.label }}</span>
               <span class="subtle feature-stored-label">{{ storedDetailLabel(panel) }}</span>
             </span>
-            <span class="feature-cell" data-label="Rate">{{ formatPercent(panel.summary.compatibility_rate) }}</span>
+            <span class="feature-cell feature-rate-cell" data-label="Rate">
+              <span>{{ formatPercent(panel.summary.compatibility_rate) }}</span>
+              <span
+                v-if="panel.comparison.delta !== null"
+                class="feature-delta-chip"
+                :class="featureDeltaClass(panel.comparison)"
+              >
+                {{ formatRateDelta(panel.comparison.delta) }}
+              </span>
+            </span>
             <span class="feature-cell" data-label="Eligible">{{ panel.summary.eligible }}</span>
             <span class="feature-cell" data-label="Passed">{{ panel.summary.passed }}</span>
             <span class="feature-cell" data-label="Failed + Error">{{ panel.summary.failed + panel.summary.errored }}</span>
@@ -187,6 +271,44 @@ function handleToggle(event: Event): void {
           </summary>
 
           <div class="feature-overview-body">
+            <div v-if="panel.comparison.delta !== null" class="feature-comparison-detail">
+              <div v-if="panel.comparison.nowPassing.length" class="case-change-group case-change-improved">
+                <h5>Now passing vs previous</h5>
+                <ul class="case-change-list">
+                  <li v-for="entry in visibleCaseChanges(panel.comparison.nowPassing)" :key="entry.key">
+                    <span class="case-change-name">{{ entry.name }}</span>
+                    <span v-if="entry.classname" class="subtle mono">{{ entry.classname }}</span>
+                    <span class="case-change-transition">
+                      {{ caseStatusLabel(entry.fromStatus) }} -> {{ caseStatusLabel(entry.toStatus) }}
+                    </span>
+                  </li>
+                </ul>
+                <p v-if="hiddenCaseChangeCount(panel.comparison.nowPassing)" class="subtle">
+                  {{ hiddenCaseChangeCount(panel.comparison.nowPassing) }} more now passing.
+                </p>
+              </div>
+
+              <div v-if="panel.comparison.noLongerPassing.length" class="case-change-group case-change-regressed">
+                <h5>No longer passing vs previous</h5>
+                <ul class="case-change-list">
+                  <li v-for="entry in visibleCaseChanges(panel.comparison.noLongerPassing)" :key="entry.key">
+                    <span class="case-change-name">{{ entry.name }}</span>
+                    <span v-if="entry.classname" class="subtle mono">{{ entry.classname }}</span>
+                    <span class="case-change-transition">
+                      {{ caseStatusLabel(entry.fromStatus) }} -> {{ caseStatusLabel(entry.toStatus) }}
+                    </span>
+                  </li>
+                </ul>
+                <p v-if="hiddenCaseChangeCount(panel.comparison.noLongerPassing)" class="subtle">
+                  {{ hiddenCaseChangeCount(panel.comparison.noLongerPassing) }} more no longer passing.
+                </p>
+              </div>
+
+              <p v-if="!hasCaseChanges(panel.comparison)" class="subtle feature-comparison-empty">
+                No stored test status changes for this feature.
+              </p>
+            </div>
+
             <div v-if="!panel.entries.length" class="loader feature-detail-empty">
               {{ emptyFeatureMessage() }}
             </div>

@@ -18,7 +18,6 @@ import {
   searchUrlFromState,
 } from "./lib/shareState";
 import {
-  HISTORY_BATCH_SIZE,
   archivedRunAnchorId,
   deltaForSuite,
   fetchJson,
@@ -28,11 +27,19 @@ import {
   runScope,
   scrollElementIntoView,
   statusClass,
+  summarizeFeatureComparisons,
   suiteLabel,
 } from "./lib/report";
 import { createPersistentSearchSession } from "./lib/search";
 import { highlightSearchMatch } from "./lib/searchHighlight";
-import type { FullRun, HistoryTogglePayload, IndexPayload, RunSummary } from "./lib/types";
+import type {
+  FeatureComparisonSummary,
+  FullRun,
+  HistoryTogglePayload,
+  IndexPayload,
+  RunLike,
+  RunSummary,
+} from "./lib/types";
 import type { SearchIndexLoadProgress, SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
 import type { SharedCaseIdentity } from "./lib/shareState";
 
@@ -45,6 +52,7 @@ interface SummaryCard {
   failedOrErrored: number;
   skipped: number;
   delta: number | null;
+  featureMovement: FeatureComparisonSummary;
 }
 
 interface NavigationOptions {
@@ -79,8 +87,6 @@ const latestRunLoading = ref<boolean>(false);
 const latestRunError = ref<string>("");
 const trendPanelOpen = ref<boolean>(false);
 const archivedMenuOpen = ref<boolean>(false);
-const historyBatchSize = ref<number>(HISTORY_BATCH_SIZE);
-const visibleArchivedCount = ref<number>(HISTORY_BATCH_SIZE);
 const pendingNavigationTarget = ref<string>("");
 const searchQuery = ref<string>("");
 const searchSuiteFilter = ref<string>("all");
@@ -114,11 +120,9 @@ const runLoading = reactive<Record<string, boolean>>({});
 const runErrors = reactive<Record<string, string>>({});
 
 const archivedDropdown = ref<HTMLElement | null>(null);
-const historySentinel = ref<HTMLElement | null>(null);
 const trendPanelRef = ref<TrendPanelExposed | null>(null);
 const caseModalBackdrop = ref<HTMLElement | null>(null);
 
-let historyObserver: IntersectionObserver | null = null;
 let modalTouchY = 0;
 
 const hasRuns = computed(() => Boolean(index.value?.runs?.length));
@@ -127,8 +131,6 @@ const latestScope = computed(() =>
   latestSummary.value ? runScope(latestSummary.value) : { kind: "unknown", label: "Run inputs unavailable" }
 );
 const archivedSummaries = computed<RunSummary[]>(() => index.value?.runs?.slice(1) || []);
-const visibleArchivedSummaries = computed<RunSummary[]>(() => archivedSummaries.value.slice(0, visibleArchivedCount.value));
-const canLoadMoreHistory = computed(() => visibleArchivedCount.value < archivedSummaries.value.length);
 const suiteOrder = computed<string[]>(() => index.value?.suite_order || []);
 const trimmedSearchQuery = computed<string>(() => searchQuery.value.trim());
 const searchActive = computed<boolean>(() => trimmedSearchQuery.value.length > 0);
@@ -223,6 +225,7 @@ const summaryCards = computed<SummaryCard[]>(() => {
   suiteOrder.value.forEach((suiteKey) => {
     const suite = latest.suites?.[suiteKey];
     if (!suite) return;
+    const previousSuite = currentIndex.runs[1]?.suites?.[suiteKey] || null;
 
     cards.push({
       key: suiteKey,
@@ -233,19 +236,12 @@ const summaryCards = computed<SummaryCard[]>(() => {
       failedOrErrored: suite.summary.failed + suite.summary.errored,
       skipped: suite.summary.skipped,
       delta: deltaForSuite(currentIndex.runs, suiteKey),
+      featureMovement: summarizeFeatureComparisons(suite, previousSuite),
     });
   });
 
   return cards;
 });
-
-watch(
-  [visibleArchivedCount, canLoadMoreHistory],
-  async () => {
-    await nextTick();
-    setupHistoryObserver();
-  }
-);
 
 watch([trimmedSearchQuery, searchSuiteFilter], () => {
   if (!applyingSharedUrlState) {
@@ -264,12 +260,32 @@ function deltaText(delta: number | null): string {
   return `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)} pts vs previous`;
 }
 
+function featureCountText(count: number, state: "improved" | "degraded"): string {
+  return `${count} feature${count === 1 ? "" : "s"} ${state}`;
+}
+
 function highlightSearchResultText(value: string | null | undefined): string {
   return highlightSearchMatch(value, trimmedSearchQuery.value);
 }
 
 function historyRun(summaryId: string): FullRun | null {
   return runDetailsById[summaryId] || null;
+}
+
+function previousSummaryForRunOrdinal(runOrdinal: number): RunSummary | null {
+  return index.value?.runs?.[runOrdinal + 1] || null;
+}
+
+function comparisonRunForRunOrdinal(runOrdinal: number): RunLike | null {
+  const previousSummary = previousSummaryForRunOrdinal(runOrdinal);
+  if (!previousSummary) {
+    return null;
+  }
+  return runDetailsById[previousSummary.id] || previousSummary;
+}
+
+function runOrdinalForSummary(summary: RunSummary): number {
+  return index.value?.runs?.findIndex((item) => item.id === summary.id) ?? -1;
 }
 
 function historyRunLoading(summaryId: string): boolean {
@@ -294,9 +310,9 @@ async function bootstrap(): Promise<void> {
     }
 
     const latestPromise = loadLatestRun();
+    void ensureComparisonRunLoadedForRunOrdinal(0);
 
     await nextTick();
-    setupHistoryObserver();
     scheduleSearchSessionPreload();
     const searchStateApplied = await applySearchUrlState();
 
@@ -340,6 +356,16 @@ async function ensureHistoryRunLoaded(summary: RunSummary): Promise<void> {
     runErrors[summary.id] = errorMessageOf(error);
   } finally {
     runLoading[summary.id] = false;
+  }
+}
+
+async function ensureComparisonRunLoadedForRunOrdinal(runOrdinal: number): Promise<void> {
+  if (runOrdinal < 0) {
+    return;
+  }
+  const previousSummary = previousSummaryForRunOrdinal(runOrdinal);
+  if (previousSummary) {
+    await ensureHistoryRunLoaded(previousSummary);
   }
 }
 
@@ -814,11 +840,6 @@ async function openSearchResult(result: SearchResult): Promise<void> {
 function ensureHistoryVisible(summary: RunSummary): void {
   const archivedIndex = archivedSummaries.value.findIndex((item) => item.id === summary.id);
   if (archivedIndex === -1) return;
-
-  const requiredCount = archivedIndex + 1;
-  if (visibleArchivedCount.value < requiredCount) {
-    visibleArchivedCount.value = requiredCount;
-  }
 }
 
 function findArchivedSummary(targetId: string): { index: number; summary: RunSummary } | null {
@@ -836,18 +857,13 @@ function findArchivedSummary(targetId: string): { index: number; summary: RunSum
   };
 }
 
-function loadMoreHistory(): void {
-  if (!canLoadMoreHistory.value) return;
-  visibleArchivedCount.value = Math.min(
-    archivedSummaries.value.length,
-    visibleArchivedCount.value + historyBatchSize.value
-  );
-}
-
 async function handleHistoryToggle({ summary, open }: HistoryTogglePayload): Promise<void> {
   expandedHistory[summary.id] = open;
   if (open) {
-    await ensureHistoryRunLoaded(summary);
+    await Promise.all([
+      ensureHistoryRunLoaded(summary),
+      ensureComparisonRunLoadedForRunOrdinal(runOrdinalForSummary(summary)),
+    ]);
   }
 }
 
@@ -949,34 +965,6 @@ function handleWindowResize(): void {
   trendPanelRef.value?.resizeCharts();
 }
 
-function destroyHistoryObserver(): void {
-  if (historyObserver) {
-    historyObserver.disconnect();
-    historyObserver = null;
-  }
-}
-
-function setupHistoryObserver(): void {
-  destroyHistoryObserver();
-
-  if (!("IntersectionObserver" in window) || !canLoadMoreHistory.value || !historySentinel.value) {
-    return;
-  }
-
-  historyObserver = new IntersectionObserver(
-    (entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        loadMoreHistory();
-      }
-    },
-    {
-      rootMargin: "360px 0px",
-    }
-  );
-
-  historyObserver.observe(historySentinel.value);
-}
-
 onMounted(() => {
   document.addEventListener("click", handleDocumentClick);
   document.addEventListener("focusin", handleDocumentFocus);
@@ -995,7 +983,6 @@ onBeforeUnmount(() => {
   window.removeEventListener("popstate", handleWindowPopstate);
   window.removeEventListener("resize", handleWindowResize);
   cancelSearchSessionPreload();
-  destroyHistoryObserver();
   unlockPageScroll();
 });
 </script>
@@ -1097,6 +1084,14 @@ onBeforeUnmount(() => {
                 {{ card.passed }} passed, {{ card.failedOrErrored }} failed/error, {{ card.skipped }} skipped
               </p>
               <p class="delta" :class="deltaClass(card.delta)">{{ deltaText(card.delta) }}</p>
+              <div v-if="card.featureMovement.comparable" class="feature-rollup run-feature-rollup">
+                <span class="feature-rollup-chip improved">
+                  {{ featureCountText(card.featureMovement.improved, "improved") }}
+                </span>
+                <span class="feature-rollup-chip regressed">
+                  {{ featureCountText(card.featureMovement.regressed, "degraded") }}
+                </span>
+              </div>
             </article>
           </div>
         </section>
@@ -1241,7 +1236,13 @@ onBeforeUnmount(() => {
           <div class="run-details" :class="{ loading: latestRunLoading && !latestRun }">
             <div v-if="latestRunLoading && !latestRun" class="loader">Loading latest run…</div>
             <div v-else-if="latestRunError" class="loader">{{ latestRunError }}</div>
-            <RunDetails v-else-if="latestRun" :run="latestRun" :suite-order="suiteOrder" :default-suite-open="true" />
+            <RunDetails
+              v-else-if="latestRun"
+              :run="latestRun"
+              :previous-run="comparisonRunForRunOrdinal(0)"
+              :suite-order="suiteOrder"
+              :default-suite-open="true"
+            />
           </div>
         </section>
 
@@ -1260,26 +1261,19 @@ onBeforeUnmount(() => {
             <div v-if="!archivedSummaries.length" class="loader empty-state">No archived runs are available yet.</div>
 
             <HistoryItem
-              v-for="(summary, runIndex) in visibleArchivedSummaries"
+              v-for="(summary, runIndex) in archivedSummaries"
               :key="summary.id"
               :summary="summary"
               :run-index="runIndex"
               :suite-order="suiteOrder"
               :run-data="historyRun(summary.id)"
+              :previous-run="comparisonRunForRunOrdinal(runIndex + 1)"
               :loading="historyRunLoading(summary.id)"
               :error="historyRunError(summary.id)"
               :expanded="isHistoryExpanded(summary.id)"
               @toggle="handleHistoryToggle"
               @retry="retryHistoryLoad"
             />
-
-            <div v-if="canLoadMoreHistory" class="history-load-more">
-              <div ref="historySentinel" class="history-sentinel" aria-hidden="true"></div>
-              <button class="load-more-button" type="button" @click="loadMoreHistory">
-                Load {{ Math.min(historyBatchSize, archivedSummaries.length - visibleArchivedCount) }} more runs
-              </button>
-              <p class="subtle">Showing {{ visibleArchivedSummaries.length }} of {{ archivedSummaries.length }} archived runs.</p>
-            </div>
           </div>
         </section>
       </template>

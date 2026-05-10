@@ -23,6 +23,31 @@ export interface StoredCaseEntry {
   detail?: string;
 }
 
+export type FeatureComparisonDirection = "improved" | "regressed" | "flat" | "unknown";
+
+export interface CaseStatusChange {
+  key: string;
+  name: string;
+  classname: string;
+  fromStatus: string;
+  toStatus: string;
+}
+
+export interface FeatureComparison {
+  previousRate: number | null;
+  delta: number | null;
+  direction: FeatureComparisonDirection;
+  nowPassing: CaseStatusChange[];
+  noLongerPassing: CaseStatusChange[];
+}
+
+export interface FeatureComparisonSummary {
+  improved: number;
+  regressed: number;
+  flat: number;
+  comparable: number;
+}
+
 export interface SuiteRecord {
   label: string;
   status: string;

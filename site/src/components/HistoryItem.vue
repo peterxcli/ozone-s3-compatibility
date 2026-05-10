@@ -10,9 +10,21 @@ import {
   runId,
   runScope,
   statusClass,
+  summarizeFeatureComparisons,
   suiteLabel,
 } from "../lib/report";
-import type { FullRun, HistoryTogglePayload, RunSummary } from "../lib/types";
+import type {
+  FeatureComparisonSummary,
+  FullRun,
+  HistoryTogglePayload,
+  OrderedSuiteEntry,
+  RunLike,
+  RunSummary,
+} from "../lib/types";
+
+interface SuiteSummaryEntry extends OrderedSuiteEntry {
+  featureMovement: FeatureComparisonSummary;
+}
 
 const props = withDefaults(
   defineProps<{
@@ -20,6 +32,7 @@ const props = withDefaults(
     runIndex: number;
     suiteOrder?: string[];
     runData?: FullRun | null;
+    previousRun?: RunLike | null;
     loading?: boolean;
     error?: string;
     expanded?: boolean;
@@ -27,6 +40,7 @@ const props = withDefaults(
   {
     suiteOrder: () => [],
     runData: null,
+    previousRun: null,
     loading: false,
     error: "",
     expanded: false,
@@ -39,9 +53,22 @@ const emit = defineEmits<{
 }>();
 
 const anchorId = computed(() => archivedRunAnchorId(props.summary, props.runIndex));
-const suiteSummaries = computed(() => orderedSuitesFromRun(props.summary, props.suiteOrder));
+const suiteSummaries = computed<SuiteSummaryEntry[]>(() =>
+  orderedSuitesFromRun(props.summary, props.suiteOrder).map((entry) => ({
+    ...entry,
+    featureMovement: featureMovementForSuite(entry),
+  }))
+);
 const scopeInfo = computed(() => runScope(props.summary));
 const statusLabel = computed(() => String(props.summary.status || "unknown").replace(/_/g, " "));
+
+function featureMovementForSuite(entry: OrderedSuiteEntry): FeatureComparisonSummary {
+  return summarizeFeatureComparisons(entry.suite, props.previousRun?.suites?.[entry.key] || null);
+}
+
+function featureCountText(count: number, state: "improved" | "degraded"): string {
+  return `${count} feature${count === 1 ? "" : "s"} ${state}`;
+}
 
 function handleToggle(event: Event): void {
   const target = event.target as HTMLDetailsElement | null;
@@ -77,6 +104,14 @@ function retry(): void {
             <span class="pill">{{ formatPercent(entry.suite.summary.compatibility_rate) }}</span>
             <span class="pill">{{ entry.suite.summary.eligible }} eligible</span>
           </div>
+          <div v-if="entry.featureMovement.comparable" class="feature-rollup history-feature-rollup">
+            <span class="feature-rollup-chip improved">
+              {{ featureCountText(entry.featureMovement.improved, "improved") }}
+            </span>
+            <span class="feature-rollup-chip regressed">
+              {{ featureCountText(entry.featureMovement.regressed, "degraded") }}
+            </span>
+          </div>
         </div>
       </div>
     </summary>
@@ -87,7 +122,13 @@ function retry(): void {
         {{ error }}
         <button class="inline-button" type="button" @click.stop="retry">Retry</button>
       </div>
-      <RunDetails v-else-if="runData" :run="runData" :suite-order="suiteOrder" :default-suite-open="false" />
+      <RunDetails
+        v-else-if="runData"
+        :run="runData"
+        :previous-run="previousRun"
+        :suite-order="suiteOrder"
+        :default-suite-open="false"
+      />
       <div v-else class="loader history-detail-state">Open this run to load its full detail.</div>
     </div>
   </details>
