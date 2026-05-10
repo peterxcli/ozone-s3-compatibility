@@ -38,6 +38,7 @@ writeFileSync(path.join(outDir, "package.json"), '{"type":"commonjs"}\n', "utf8"
 
 const {
   compareFeatureWithPrevious,
+  fetchIndex,
   formatRateDelta,
   summarizeFeatureComparisons,
 } = require(path.join(outDir, "report.js"));
@@ -178,4 +179,65 @@ test("summarizes feature-level movement against the immediately older suite", ()
     flat: 1,
     comparable: 3,
   });
+});
+
+test("loads partitioned index shards and reconstructs the existing index shape", async () => {
+  const originalFetch = globalThis.fetch;
+  const responses = new Map([
+    [
+      "./data/index.json",
+      {
+        schema_version: 2,
+        partitioned: true,
+        generated_at: "2026-04-02T07:22:59Z",
+        rate_formula: "compatibility_rate = passed / eligible",
+        suite_order: ["s3_tests"],
+        partitions: {
+          runs: ["index/runs-000.json", "index/runs-001.json"],
+          charts_overall: "index/charts-overall.json",
+          charts_features: {
+            s3_tests: "index/charts-features-s3_tests.json",
+          },
+        },
+      },
+    ],
+    ["./data/index/runs-000.json", { runs: [{ id: "run-2", started_at: "2026-04-02T07:22:59Z" }] }],
+    ["./data/index/runs-001.json", { runs: [{ id: "run-1", started_at: "2026-04-01T07:22:59Z" }] }],
+    ["./data/index/charts-overall.json", { overall: { s3_tests: [{ run_id: "run-1" }] } }],
+    [
+      "./data/index/charts-features-s3_tests.json",
+      { suite: "s3_tests", features: { bucket: [{ run_id: "run-1" }] } },
+    ],
+  ]);
+  const requests = [];
+
+  globalThis.fetch = async (path, options) => {
+    const key = String(path);
+    requests.push({ path: key, cache: options?.cache });
+    if (!responses.has(key)) {
+      return { ok: false, json: async () => ({}) };
+    }
+    return { ok: true, json: async () => responses.get(key) };
+  };
+
+  try {
+    const index = await fetchIndex("./data/index.json");
+
+    assert.deepEqual(
+      requests.map((entry) => entry.path),
+      [
+        "./data/index.json",
+        "./data/index/runs-000.json",
+        "./data/index/runs-001.json",
+        "./data/index/charts-overall.json",
+        "./data/index/charts-features-s3_tests.json",
+      ],
+    );
+    assert.deepEqual(requests.map((entry) => entry.cache), ["no-store", "no-store", "no-store", "no-store", "no-store"]);
+    assert.deepEqual(index.runs.map((entry) => entry.id), ["run-2", "run-1"]);
+    assert.deepEqual(index.charts.overall.s3_tests, [{ run_id: "run-1" }]);
+    assert.deepEqual(index.charts.features.s3_tests.bucket, [{ run_id: "run-1" }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

@@ -143,6 +143,35 @@ export interface IndexPayload {
   };
 }
 
+export interface PartitionedIndexManifest {
+  schema_version?: number;
+  partitioned: true;
+  generated_at: string;
+  rate_formula: string;
+  suite_order: string[];
+  run_count?: number;
+  partitions: {
+    runs: string[];
+    charts_overall: string;
+    charts_features: Record<string, string>;
+  };
+}
+
+export interface IndexRunsShard {
+  runs: RunSummary[];
+}
+
+export interface IndexOverallChartsShard {
+  overall: Record<string, OverallChartPoint[]>;
+}
+
+export interface IndexFeatureChartsShard {
+  suite?: string;
+  features: Record<string, FeatureChartPoint[]>;
+}
+
+export type IndexBootstrapPayload = IndexPayload | PartitionedIndexManifest;
+
 export interface OrderedSuiteEntry {
   key: string;
   suite: SuiteRecord;

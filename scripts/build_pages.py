@@ -16,6 +16,7 @@ from typing import Any
 from normalize_run import normalize_mint_suite, normalize_s3_suite, overall_status
 
 DEFAULT_S3_TESTS_ARGS = "s3tests/functional"
+INDEX_RUN_CHUNK_SIZE = 10
 
 
 def parse_args() -> argparse.Namespace:
@@ -253,6 +254,66 @@ def build_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
             "features": {suite: dict(feature_map) for suite, feature_map in features.items()},
         },
     }
+
+
+def partition_index_payload(
+    index_payload: dict[str, Any],
+    run_chunk_size: int = INDEX_RUN_CHUNK_SIZE,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    if run_chunk_size <= 0:
+        raise ValueError("run_chunk_size must be greater than zero")
+
+    shards: dict[str, dict[str, Any]] = {}
+    run_paths: list[str] = []
+    runs = index_payload.get("runs", [])
+    for chunk_index, offset in enumerate(range(0, len(runs), run_chunk_size)):
+        path = f"index/runs-{chunk_index:03d}.json"
+        run_paths.append(path)
+        shards[path] = {"runs": runs[offset : offset + run_chunk_size]}
+
+    charts = index_payload.get("charts", {})
+    overall_path = "index/charts-overall.json"
+    shards[overall_path] = {"overall": charts.get("overall", {})}
+
+    feature_paths: dict[str, str] = {}
+    feature_charts = charts.get("features", {})
+    for suite_key in index_payload.get("suite_order", []):
+        if suite_key not in feature_charts:
+            continue
+        path = f"index/charts-features-{suite_key}.json"
+        feature_paths[suite_key] = path
+        shards[path] = {
+            "suite": suite_key,
+            "features": feature_charts.get(suite_key, {}),
+        }
+
+    manifest = {
+        "schema_version": 2,
+        "partitioned": True,
+        "generated_at": index_payload.get("generated_at", ""),
+        "rate_formula": index_payload.get("rate_formula", ""),
+        "suite_order": index_payload.get("suite_order", []),
+        "run_count": len(runs),
+        "partitions": {
+            "runs": run_paths,
+            "charts_overall": overall_path,
+            "charts_features": feature_paths,
+        },
+    }
+
+    return manifest, shards
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+
+
+def write_partitioned_index(index_payload: dict[str, Any], data_dir: Path) -> None:
+    manifest, shards = partition_index_payload(index_payload)
+    for relative_path, shard_payload in shards.items():
+        write_json(data_dir / relative_path, shard_payload)
+    write_json(data_dir / "index.json", manifest)
 
 
 def search_text(*values: Any) -> str:
@@ -649,14 +710,8 @@ def main() -> None:
 
     runs = [load_json(path) for path in sorted((output_dir / "data" / "runs").glob("*.json"))]
     index_payload = build_index(runs)
-    (output_dir / "data" / "index.json").write_text(
-        json.dumps(index_payload, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
-    (output_dir / "data" / "search-index.json").write_text(
-        json.dumps(build_search_index(runs), indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
+    write_partitioned_index(index_payload, output_dir / "data")
+    write_json(output_dir / "data" / "search-index.json", build_search_index(runs))
 
     copy_tree(site_dir, output_dir)
     write_social_preview(index_payload, output_dir / "social-preview.svg")

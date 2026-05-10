@@ -5,10 +5,15 @@ import type {
   FeatureChartPoint,
   FeatureComparisonDirection,
   FullRun,
+  IndexBootstrapPayload,
+  IndexFeatureChartsShard,
+  IndexOverallChartsShard,
   IndexPayload,
+  IndexRunsShard,
   NormalizedExecution,
   OrderedSuiteEntry,
   OverallChartPoint,
+  PartitionedIndexManifest,
   RunLike,
   RunScopeInfo,
   RunSummary,
@@ -328,6 +333,68 @@ export async function fetchJson<T>(path: string, errorMessage: string): Promise<
     throw new Error(errorMessage);
   }
   return (await response.json()) as T;
+}
+
+function isPartitionedIndexPayload(payload: IndexBootstrapPayload): payload is PartitionedIndexManifest {
+  return Boolean("partitioned" in payload && payload.partitioned && "partitions" in payload);
+}
+
+function resolveIndexPartitionPath(indexPath: string, partitionPath: string): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(partitionPath) || partitionPath.startsWith("/")) {
+    return partitionPath;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(indexPath)) {
+    return new URL(partitionPath, indexPath).toString();
+  }
+
+  const queryStart = indexPath.search(/[?#]/);
+  const pathWithoutQuery = queryStart === -1 ? indexPath : indexPath.slice(0, queryStart);
+  const lastSlash = pathWithoutQuery.lastIndexOf("/");
+  const basePath = lastSlash === -1 ? "" : indexPath.slice(0, lastSlash + 1);
+  return `${basePath}${partitionPath}`;
+}
+
+export async function fetchIndex(indexPath: string): Promise<IndexPayload> {
+  const payload = await fetchJson<IndexBootstrapPayload>(indexPath, "Failed to load report index");
+  if (!isPartitionedIndexPayload(payload)) {
+    return payload;
+  }
+
+  const runShardPromises = payload.partitions.runs.map((path) =>
+    fetchJson<IndexRunsShard>(resolveIndexPartitionPath(indexPath, path), `Failed to load report index shard ${path}`)
+  );
+  const overallShardPromise = fetchJson<IndexOverallChartsShard>(
+    resolveIndexPartitionPath(indexPath, payload.partitions.charts_overall),
+    `Failed to load report index shard ${payload.partitions.charts_overall}`,
+  );
+  const featureEntries = Object.entries(payload.partitions.charts_features || {});
+  const featureShardPromises = featureEntries.map(([suiteKey, path]) =>
+    fetchJson<IndexFeatureChartsShard>(
+      resolveIndexPartitionPath(indexPath, path),
+      `Failed to load ${suiteLabel(suiteKey)} feature chart index shard`,
+    )
+  );
+
+  const [runShards, overallShard, featureShards] = await Promise.all([
+    Promise.all(runShardPromises),
+    overallShardPromise,
+    Promise.all(featureShardPromises),
+  ]);
+  const features: Record<string, Record<string, FeatureChartPoint[]>> = {};
+  featureEntries.forEach(([suiteKey], index) => {
+    features[suiteKey] = featureShards[index]?.features || {};
+  });
+
+  return {
+    generated_at: payload.generated_at,
+    rate_formula: payload.rate_formula,
+    suite_order: payload.suite_order,
+    runs: runShards.flatMap((shard) => shard.runs || []),
+    charts: {
+      overall: overallShard.overall || {},
+      features,
+    },
+  };
 }
 
 export async function fetchRun(file: string): Promise<FullRun> {

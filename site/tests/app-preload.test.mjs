@@ -37,6 +37,12 @@ test("fetches report JSON without browser cache reuse", () => {
   assert.match(reportSource, /fetch\(path,\s*\{\s*cache:\s*"no-store"\s*\}\)/);
 });
 
+test("loads partitioned report index shards in parallel", () => {
+  assert.match(reportSource, /function fetchIndex/);
+  assert.match(reportSource, /Promise\.all/);
+  assert.match(appSource, /fetchIndex\("\.\/data\/index\.json"\)/);
+});
+
 test("shows feature movement rollups at run and suite levels", () => {
   assert.match(reportSource, /function summarizeFeatureComparisons/);
   assert.match(appSource, /featureMovement/);

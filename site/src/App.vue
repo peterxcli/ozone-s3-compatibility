@@ -20,6 +20,7 @@ import {
 import {
   archivedRunAnchorId,
   deltaForSuite,
+  fetchIndex,
   fetchJson,
   fetchRun,
   formatDate,
@@ -302,7 +303,7 @@ function isHistoryExpanded(summaryId: string): boolean {
 
 async function bootstrap(): Promise<void> {
   try {
-    index.value = await fetchJson<IndexPayload>("./data/index.json", "Failed to load report index");
+    index.value = await fetchIndex("./data/index.json");
     loading.value = false;
 
     if (!hasRuns.value) {
