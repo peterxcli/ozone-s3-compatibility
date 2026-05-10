@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 
 import {
   CASE_BATCH_SIZE,
+  compareFeatureRateWithPrevious,
   compareFeatureWithPrevious,
   formatPercent,
   formatRateDelta,
@@ -43,12 +44,17 @@ const props = withDefaults(
 
 const isOpen = ref<boolean>(props.openByDefault);
 const featureCaseDisplayCount = reactive<Record<string, number>>({});
+const featureCaseComparisons = reactive<Record<string, FeatureComparison | undefined>>({});
+const openFeatureKeys = reactive<Record<string, boolean>>({});
 
 const cases = computed<StoredCaseEntry[]>(() => props.suite.cases || props.suite.non_passing_cases || []);
 const failedOrErrored = computed<number>(() => (props.suite.summary?.failed || 0) + (props.suite.summary?.errored || 0));
 const statusLabel = computed<string>(() => String(props.suite.status || "unknown").replace(/_/g, " "));
 const featureMovement = computed<FeatureComparisonSummary>(() =>
   summarizeFeatureComparisons(props.suite, props.previousSuite)
+);
+const canCompareStoredCaseChanges = computed<boolean>(() =>
+  suiteHasCaseMetadata(props.suite) && suiteHasCaseMetadata(props.previousSuite)
 );
 const featurePanels = computed<FeaturePanel[]>(() => {
   const caseBuckets = new Map<string, StoredCaseEntry[]>();
@@ -73,7 +79,7 @@ const featurePanels = computed<FeaturePanel[]>(() => {
     label: feature.label,
     summary: feature.summary,
     entries: caseBuckets.get(feature.name) || [],
-    comparison: compareFeatureWithPrevious(props.suite, props.previousSuite, feature.name),
+    comparison: compareFeatureRateWithPrevious(props.suite, props.previousSuite, feature.name),
   }));
 
   if (unmatchedCases.length) {
@@ -109,6 +115,20 @@ const featureOverviewNote = computed<string>(() => {
 
   return `Click a feature row to expand its stored run detail. ${storageNote}`;
 });
+
+watch(
+  [() => props.suite, () => props.previousSuite],
+  () => {
+    Object.keys(featureCaseComparisons).forEach((key) => {
+      delete featureCaseComparisons[key];
+    });
+    featurePanels.value.forEach((panel) => {
+      if (openFeatureKeys[panel.key]) {
+        ensureFeatureCaseComparison(panel);
+      }
+    });
+  }
+);
 
 function visibleEntriesForFeature(panel: FeaturePanel): StoredCaseEntry[] {
   const limit = featureCaseDisplayCount[panel.key] || CASE_BATCH_SIZE;
@@ -149,6 +169,27 @@ function featureDeltaClass(comparison: FeatureComparison): string {
   return `feature-delta-${comparison.direction}`;
 }
 
+function suiteHasCaseMetadata(suite: SuiteRecord | null | undefined): boolean {
+  return Boolean(suite?.included_case_strategy || Array.isArray(suite?.cases) || Array.isArray(suite?.non_passing_cases));
+}
+
+function featureComparisonForPanel(panel: FeaturePanel): FeatureComparison {
+  return featureCaseComparisons[panel.key] || panel.comparison;
+}
+
+function ensureFeatureCaseComparison(panel: FeaturePanel): void {
+  if (
+    panel.key === "__untagged__" ||
+    panel.comparison.delta === null ||
+    !canCompareStoredCaseChanges.value ||
+    featureCaseComparisons[panel.key]
+  ) {
+    return;
+  }
+
+  featureCaseComparisons[panel.key] = compareFeatureWithPrevious(props.suite, props.previousSuite, panel.key);
+}
+
 function hasCaseChanges(comparison: FeatureComparison): boolean {
   return Boolean(comparison.nowPassing.length || comparison.noLongerPassing.length);
 }
@@ -173,6 +214,14 @@ function handleToggle(event: Event): void {
   const target = event.target as HTMLDetailsElement | null;
   if (target) {
     isOpen.value = target.open;
+  }
+}
+
+function handleFeatureToggle(panel: FeaturePanel, event: Event): void {
+  const target = event.target as HTMLDetailsElement | null;
+  openFeatureKeys[panel.key] = Boolean(target?.open);
+  if (openFeatureKeys[panel.key]) {
+    ensureFeatureCaseComparison(panel);
   }
 }
 </script>
@@ -248,6 +297,7 @@ function handleToggle(event: Event): void {
           :key="panel.key"
           class="feature-overview-item"
           :class="featureComparisonClass(panel.comparison)"
+          @toggle="handleFeatureToggle(panel, $event)"
         >
           <summary class="feature-overview-summary">
             <span class="feature-cell feature-cell-name">
@@ -272,10 +322,10 @@ function handleToggle(event: Event): void {
 
           <div class="feature-overview-body">
             <div v-if="panel.comparison.delta !== null" class="feature-comparison-detail">
-              <div v-if="panel.comparison.nowPassing.length" class="case-change-group case-change-improved">
+              <div v-if="featureComparisonForPanel(panel).nowPassing.length" class="case-change-group case-change-improved">
                 <h5>Now passing vs previous</h5>
                 <ul class="case-change-list">
-                  <li v-for="entry in visibleCaseChanges(panel.comparison.nowPassing)" :key="entry.key">
+                  <li v-for="entry in visibleCaseChanges(featureComparisonForPanel(panel).nowPassing)" :key="entry.key">
                     <span class="case-change-name">{{ entry.name }}</span>
                     <span v-if="entry.classname" class="subtle mono">{{ entry.classname }}</span>
                     <span class="case-change-transition">
@@ -283,15 +333,15 @@ function handleToggle(event: Event): void {
                     </span>
                   </li>
                 </ul>
-                <p v-if="hiddenCaseChangeCount(panel.comparison.nowPassing)" class="subtle">
-                  {{ hiddenCaseChangeCount(panel.comparison.nowPassing) }} more now passing.
+                <p v-if="hiddenCaseChangeCount(featureComparisonForPanel(panel).nowPassing)" class="subtle">
+                  {{ hiddenCaseChangeCount(featureComparisonForPanel(panel).nowPassing) }} more now passing.
                 </p>
               </div>
 
-              <div v-if="panel.comparison.noLongerPassing.length" class="case-change-group case-change-regressed">
+              <div v-if="featureComparisonForPanel(panel).noLongerPassing.length" class="case-change-group case-change-regressed">
                 <h5>No longer passing vs previous</h5>
                 <ul class="case-change-list">
-                  <li v-for="entry in visibleCaseChanges(panel.comparison.noLongerPassing)" :key="entry.key">
+                  <li v-for="entry in visibleCaseChanges(featureComparisonForPanel(panel).noLongerPassing)" :key="entry.key">
                     <span class="case-change-name">{{ entry.name }}</span>
                     <span v-if="entry.classname" class="subtle mono">{{ entry.classname }}</span>
                     <span class="case-change-transition">
@@ -299,12 +349,15 @@ function handleToggle(event: Event): void {
                     </span>
                   </li>
                 </ul>
-                <p v-if="hiddenCaseChangeCount(panel.comparison.noLongerPassing)" class="subtle">
-                  {{ hiddenCaseChangeCount(panel.comparison.noLongerPassing) }} more no longer passing.
+                <p v-if="hiddenCaseChangeCount(featureComparisonForPanel(panel).noLongerPassing)" class="subtle">
+                  {{ hiddenCaseChangeCount(featureComparisonForPanel(panel).noLongerPassing) }} more no longer passing.
                 </p>
               </div>
 
-              <p v-if="!hasCaseChanges(panel.comparison)" class="subtle feature-comparison-empty">
+              <p v-if="!canCompareStoredCaseChanges" class="subtle feature-comparison-empty">
+                Stored test status changes need full detail for both this run and the previous run.
+              </p>
+              <p v-else-if="!hasCaseChanges(featureComparisonForPanel(panel))" class="subtle feature-comparison-empty">
                 No stored test status changes for this feature.
               </p>
             </div>

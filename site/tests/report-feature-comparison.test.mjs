@@ -37,6 +37,7 @@ execFileSync(
 writeFileSync(path.join(outDir, "package.json"), '{"type":"commonjs"}\n', "utf8");
 
 const {
+  compareFeatureRateWithPrevious,
   compareFeatureWithPrevious,
   fetchIndex,
   formatRateDelta,
@@ -154,6 +155,22 @@ test("does not infer case flips from an index summary without stored case metada
 
   assert.equal(comparison.direction, "regressed");
   assert.equal(comparison.delta, -0.5);
+  assert.deepEqual(comparison.nowPassing, []);
+  assert.deepEqual(comparison.noLongerPassing, []);
+});
+
+test("compares feature pass rate without scanning stored test cases", () => {
+  const current = suite(summary(3, 1), [
+    { classname: "s3tests.functional.test_bucket", name: "test_fixed", status: "pass", features: ["bucket"] },
+  ]);
+  const previous = suite(summary(2, 2), [
+    { classname: "s3tests.functional.test_bucket", name: "test_fixed", status: "fail", features: ["bucket"] },
+  ]);
+
+  const comparison = compareFeatureRateWithPrevious(current, previous, "bucket");
+
+  assert.equal(comparison.direction, "improved");
+  assert.equal(comparison.delta, 0.25);
   assert.deepEqual(comparison.nowPassing, []);
   assert.deepEqual(comparison.noLongerPassing, []);
 });

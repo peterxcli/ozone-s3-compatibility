@@ -54,3 +54,11 @@ test("shows feature movement rollups at run and suite levels", () => {
   assert.match(suiteCardSource, /featureMovement/);
   assert.match(suiteCardSource, /feature-rollup/);
 });
+
+test("defers stored case comparison until a feature detail is opened", () => {
+  assert.match(reportSource, /function compareFeatureRateWithPrevious/);
+  assert.match(suiteCardSource, /compareFeatureRateWithPrevious/);
+  assert.match(suiteCardSource, /featureCaseComparisons/);
+  assert.match(suiteCardSource, /handleFeatureToggle/);
+  assert.doesNotMatch(suiteCardSource, /comparison:\s*compareFeatureWithPrevious/);
+});

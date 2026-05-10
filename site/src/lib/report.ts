@@ -100,12 +100,16 @@ function missingCaseStatusForSuite(suite: SuiteRecord | null | undefined): "pass
   return null;
 }
 
-function caseMapForSuite(suite: SuiteRecord | null | undefined): Map<string, StoredCaseEntry> {
-  return new Map(suiteCaseEntries(suite).map((entry) => [caseKey(entry), entry]));
-}
-
 function caseHasFeature(entry: StoredCaseEntry | undefined, featureName: string): boolean {
   return Boolean(entry?.features?.includes(featureName));
+}
+
+function featureCaseMapForSuite(suite: SuiteRecord | null | undefined, featureName: string): Map<string, StoredCaseEntry> {
+  return new Map(
+    suiteCaseEntries(suite)
+      .filter((entry) => caseHasFeature(entry, featureName))
+      .map((entry) => [caseKey(entry), entry])
+  );
 }
 
 function displayCaseName(entry: StoredCaseEntry | undefined, key: string): string {
@@ -154,7 +158,7 @@ function featureRate(suite: SuiteRecord | null | undefined, featureName: string)
   return feature?.summary?.compatibility_rate ?? null;
 }
 
-export function compareFeatureWithPrevious(
+export function compareFeatureRateWithPrevious(
   currentSuite: SuiteRecord,
   previousSuite: SuiteRecord | null | undefined,
   featureName: string,
@@ -162,8 +166,24 @@ export function compareFeatureWithPrevious(
   const currentRate = featureRate(currentSuite, featureName);
   const previousRate = featureRate(previousSuite, featureName);
   const delta = currentRate === null || previousRate === null ? null : currentRate - previousRate;
-  const currentCases = caseMapForSuite(currentSuite);
-  const previousCases = caseMapForSuite(previousSuite);
+
+  return {
+    previousRate,
+    delta,
+    direction: featureComparisonDirection(delta),
+    nowPassing: [],
+    noLongerPassing: [],
+  };
+}
+
+export function compareFeatureWithPrevious(
+  currentSuite: SuiteRecord,
+  previousSuite: SuiteRecord | null | undefined,
+  featureName: string,
+): FeatureComparison {
+  const rateComparison = compareFeatureRateWithPrevious(currentSuite, previousSuite, featureName);
+  const currentCases = featureCaseMapForSuite(currentSuite, featureName);
+  const previousCases = featureCaseMapForSuite(previousSuite, featureName);
   const currentMissingCaseStatus = missingCaseStatusForSuite(currentSuite);
   const previousMissingCaseStatus = missingCaseStatusForSuite(previousSuite);
   const keys = new Set([...currentCases.keys(), ...previousCases.keys()]);
@@ -175,10 +195,6 @@ export function compareFeatureWithPrevious(
     .forEach((key) => {
       const current = currentCases.get(key);
       const previous = previousCases.get(key);
-      if (!caseHasFeature(current, featureName) && !caseHasFeature(previous, featureName)) {
-        return;
-      }
-
       const currentStatus = caseStatusFromMap(currentCases, key, currentMissingCaseStatus);
       const previousStatus = caseStatusFromMap(previousCases, key, previousMissingCaseStatus);
       if (!currentStatus || !previousStatus || previousStatus === "not_run" || currentStatus === "not_run") {
@@ -193,9 +209,7 @@ export function compareFeatureWithPrevious(
     });
 
   return {
-    previousRate,
-    delta,
-    direction: featureComparisonDirection(delta),
+    ...rateComparison,
     nowPassing,
     noLongerPassing,
   };
