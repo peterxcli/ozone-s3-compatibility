@@ -39,7 +39,9 @@ execFileSync(
 writeFileSync(path.join(outDir, "package.json"), '{"type":"commonjs"}\n', "utf8");
 symlinkSync(path.join(siteRoot, "node_modules"), path.join(outDir, "node_modules"), "junction");
 
-const { createInMemorySearchSession, createPersistentSearchSession } = require(path.join(outDir, "search.js"));
+const { createInMemorySearchSession, createPersistentSearchSession, fetchSearchIndexPayload } = require(
+  path.join(outDir, "search.js")
+);
 
 const searchPayload = {
   schema_version: 1,
@@ -337,6 +339,56 @@ test("reports row indexing progress while building a search session", async () =
     persistent: false,
     fromCache: false,
   });
+});
+
+test("loads partitioned search index shards and reconstructs the legacy payload shape", async () => {
+  const originalFetch = globalThis.fetch;
+  const responses = new Map([
+    [
+      "./data/search-index.json",
+      {
+        schema_version: 2,
+        partitioned: true,
+        generated_at: searchPayload.generated_at,
+        index_id: searchPayload.index_id,
+        row_count: 2,
+        partitions: {
+          rows: ["search/rows-000.json", "search/rows-001.json"],
+        },
+      },
+    ],
+    ["./data/search/rows-000.json", { rows: [searchPayload.rows[0]] }],
+    ["./data/search/rows-001.json", { rows: [searchPayload.rows[1]] }],
+  ]);
+  const requests = [];
+
+  globalThis.fetch = async (path, options) => {
+    const key = String(path);
+    requests.push({ path: key, cache: options?.cache });
+    if (!responses.has(key)) {
+      return { ok: false, json: async () => ({}) };
+    }
+    return { ok: true, json: async () => responses.get(key) };
+  };
+
+  try {
+    const payload = await fetchSearchIndexPayload("./data/search-index.json");
+
+    assert.deepEqual(
+      requests.map((entry) => entry.path),
+      ["./data/search-index.json", "./data/search/rows-000.json", "./data/search/rows-001.json"]
+    );
+    assert.deepEqual(requests.map((entry) => entry.cache), ["no-store", "no-store", "no-store"]);
+    assert.equal(payload.schema_version, 1);
+    assert.equal(payload.index_id, searchPayload.index_id);
+    assert.equal(payload.row_count, 2);
+    assert.deepEqual(
+      payload.rows.map((row) => row.id),
+      [1, 2]
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("falls back to in-memory search when IndexedDB is unavailable", async () => {

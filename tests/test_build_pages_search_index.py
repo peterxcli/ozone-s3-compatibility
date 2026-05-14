@@ -100,6 +100,27 @@ class SearchIndexBuildTests(unittest.TestCase):
         self.assertEqual("abc123def456", latest["sourceRef"])
         self.assertEqual("https://github.com/ceph/s3-tests.git", latest["sourceRepo"])
 
+    def test_partitioned_search_index_manifest_keeps_rows_out_of_bootstrap_file(self) -> None:
+        payload = build_pages.build_search_index(
+            [
+                run("2026-04-01T07-22-59Z", "2026-04-01T07:22:59Z", "old AccessDenied"),
+                run("2026-04-02T07-22-59Z", "2026-04-02T07:22:59Z", "new AccessDenied"),
+                run("2026-04-03T07-22-59Z", "2026-04-03T07:22:59Z", "latest AccessDenied"),
+            ]
+        )
+
+        manifest, shards = build_pages.partition_search_index_payload(payload, row_chunk_size=2)
+
+        self.assertEqual(2, manifest["schema_version"])
+        self.assertTrue(manifest["partitioned"])
+        self.assertEqual(payload["generated_at"], manifest["generated_at"])
+        self.assertEqual(payload["index_id"], manifest["index_id"])
+        self.assertEqual(3, manifest["row_count"])
+        self.assertNotIn("rows", manifest)
+        self.assertEqual(["search/rows-000.json", "search/rows-001.json"], manifest["partitions"]["rows"])
+        self.assertEqual([1, 2], [row["id"] for row in shards["search/rows-000.json"]["rows"]])
+        self.assertEqual([3], [row["id"] for row in shards["search/rows-001.json"]["rows"]])
+
 
 class IndexPartitionBuildTests(unittest.TestCase):
     def test_partitioned_index_manifest_points_to_parallel_shards(self) -> None:

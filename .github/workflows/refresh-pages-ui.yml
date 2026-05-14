@@ -74,6 +74,10 @@ jobs:
           if [ -f "${source_dir}/data/search-index.json" ]; then
             mkdir -p .pages-repo/data
             cp "${source_dir}/data/search-index.json" .pages-repo/data/search-index.json
+            if [ -d "${source_dir}/data/search" ]; then
+              rm -rf .pages-repo/data/search
+              cp -R "${source_dir}/data/search" .pages-repo/data/search
+            fi
           fi
           touch .pages-repo/.nojekyll
 
@@ -86,6 +90,9 @@ jobs:
           git -C .pages-repo add CNAME
           if [ -f .pages-repo/data/search-index.json ]; then
             git -C .pages-repo add data/search-index.json
+          fi
+          if [ -d .pages-repo/data/search ]; then
+            git -C .pages-repo add data/search
           fi
           if git -C .pages-repo diff --cached --quiet; then
             echo "No UI changes to publish"

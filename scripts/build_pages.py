@@ -17,6 +17,7 @@ from normalize_run import normalize_mint_suite, normalize_s3_suite, overall_stat
 
 DEFAULT_S3_TESTS_ARGS = "s3tests/functional"
 INDEX_RUN_CHUNK_SIZE = 10
+SEARCH_INDEX_ROW_CHUNK_SIZE = 5000
 
 
 def parse_args() -> argparse.Namespace:
@@ -314,6 +315,42 @@ def write_partitioned_index(index_payload: dict[str, Any], data_dir: Path) -> No
     for relative_path, shard_payload in shards.items():
         write_json(data_dir / relative_path, shard_payload)
     write_json(data_dir / "index.json", manifest)
+
+
+def partition_search_index_payload(
+    search_payload: dict[str, Any],
+    row_chunk_size: int = SEARCH_INDEX_ROW_CHUNK_SIZE,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    if row_chunk_size <= 0:
+        raise ValueError("row_chunk_size must be greater than zero")
+
+    shards: dict[str, dict[str, Any]] = {}
+    row_paths: list[str] = []
+    rows = search_payload.get("rows", [])
+    for chunk_index, offset in enumerate(range(0, len(rows), row_chunk_size)):
+        path = f"search/rows-{chunk_index:03d}.json"
+        row_paths.append(path)
+        shards[path] = {"rows": rows[offset : offset + row_chunk_size]}
+
+    manifest = {
+        "schema_version": 2,
+        "partitioned": True,
+        "generated_at": search_payload.get("generated_at", ""),
+        "index_id": search_payload.get("index_id", ""),
+        "row_count": len(rows),
+        "partitions": {
+            "rows": row_paths,
+        },
+    }
+
+    return manifest, shards
+
+
+def write_partitioned_search_index(search_payload: dict[str, Any], data_dir: Path) -> None:
+    manifest, shards = partition_search_index_payload(search_payload)
+    for relative_path, shard_payload in shards.items():
+        write_json(data_dir / relative_path, shard_payload)
+    write_json(data_dir / "search-index.json", manifest)
 
 
 def search_text(*values: Any) -> str:
@@ -711,7 +748,7 @@ def main() -> None:
     runs = [load_json(path) for path in sorted((output_dir / "data" / "runs").glob("*.json"))]
     index_payload = build_index(runs)
     write_partitioned_index(index_payload, output_dir / "data")
-    write_json(output_dir / "data" / "search-index.json", build_search_index(runs))
+    write_partitioned_search_index(build_search_index(runs), output_dir / "data")
 
     copy_tree(site_dir, output_dir)
     write_social_preview(index_payload, output_dir / "social-preview.svg")

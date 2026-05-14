@@ -21,7 +21,6 @@ import {
   archivedRunAnchorId,
   deltaForSuite,
   fetchIndex,
-  fetchJson,
   fetchRun,
   formatDate,
   formatPercent,
@@ -31,7 +30,7 @@ import {
   summarizeFeatureComparisons,
   suiteLabel,
 } from "./lib/report";
-import { createPersistentSearchSession } from "./lib/search";
+import { createPersistentSearchSession, fetchSearchIndexPayload } from "./lib/search";
 import { highlightSearchMatch } from "./lib/searchHighlight";
 import type {
   FeatureComparisonSummary,
@@ -430,7 +429,7 @@ async function ensureSearchSession(): Promise<SearchSession | null> {
       };
       const payload =
         searchIndexPayload.value ||
-        (await fetchJson<SearchIndexPayload>("./data/search-index.json", "Failed to load search index"));
+        (await fetchSearchIndexPayload("./data/search-index.json"));
       searchIndexPayload.value = payload;
       searchSession.value = await createPersistentSearchSession(payload, {
         onProgress: (progress) => {

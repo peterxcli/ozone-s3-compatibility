@@ -34,6 +34,23 @@ export interface SearchIndexPayload {
   rows: SearchIndexRow[];
 }
 
+export interface PartitionedSearchIndexManifest {
+  schema_version: number;
+  partitioned: true;
+  generated_at: string;
+  index_id: string;
+  row_count: number;
+  partitions: {
+    rows: string[];
+  };
+}
+
+export interface SearchIndexRowsShard {
+  rows: SearchIndexRow[];
+}
+
+export type SearchIndexBootstrapPayload = SearchIndexPayload | PartitionedSearchIndexManifest;
+
 export interface SearchResult {
   id: string;
   suiteKey: string;
@@ -142,6 +159,60 @@ const FLEXSEARCH_OPTIONS = {
   cache: 100,
 };
 const DEFAULT_PROGRESS_BATCH_SIZE = 500;
+
+async function fetchSearchJson<T>(path: string, errorMessage: string): Promise<T> {
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(errorMessage);
+  }
+  return (await response.json()) as T;
+}
+
+function isPartitionedSearchIndexPayload(
+  payload: SearchIndexBootstrapPayload,
+): payload is PartitionedSearchIndexManifest {
+  return Boolean("partitioned" in payload && payload.partitioned && "partitions" in payload);
+}
+
+function resolveSearchIndexPartitionPath(indexPath: string, partitionPath: string): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(partitionPath) || partitionPath.startsWith("/")) {
+    return partitionPath;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(indexPath)) {
+    return new URL(partitionPath, indexPath).toString();
+  }
+
+  const queryStart = indexPath.search(/[?#]/);
+  const pathWithoutQuery = queryStart === -1 ? indexPath : indexPath.slice(0, queryStart);
+  const lastSlash = pathWithoutQuery.lastIndexOf("/");
+  const basePath = lastSlash === -1 ? "" : indexPath.slice(0, lastSlash + 1);
+  return `${basePath}${partitionPath}`;
+}
+
+export async function fetchSearchIndexPayload(indexPath: string): Promise<SearchIndexPayload> {
+  const payload = await fetchSearchJson<SearchIndexBootstrapPayload>(indexPath, "Failed to load search index");
+  if (!isPartitionedSearchIndexPayload(payload)) {
+    return payload;
+  }
+
+  const rowShards = await Promise.all(
+    payload.partitions.rows.map((path) =>
+      fetchSearchJson<SearchIndexRowsShard>(
+        resolveSearchIndexPartitionPath(indexPath, path),
+        `Failed to load search index shard ${path}`,
+      )
+    )
+  );
+  const rows = rowShards.flatMap((shard) => shard.rows || []);
+
+  return {
+    schema_version: 1,
+    generated_at: payload.generated_at,
+    index_id: payload.index_id,
+    row_count: payload.row_count || rows.length,
+    rows,
+  };
+}
 
 function normalizeText(value: string | null | undefined): string {
   return String(value || "")
