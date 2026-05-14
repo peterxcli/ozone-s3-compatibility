@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -263,20 +264,156 @@ class WorkflowDisplayTests(unittest.TestCase):
 
     def test_pr_workflow_post_comment_uses_configured_github_token(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "ozone-pr-s3-compatibility.yml").read_text(encoding="utf-8")
+        script = (ROOT / "scripts" / "post_pr_comment.sh").read_text(encoding="utf-8")
 
         self.assertIn("OZONE_PR_COMMENT_TOKEN: ${{ secrets.OZONE_PR_COMMENT_TOKEN }}", workflow)
         self.assertIn("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}", workflow)
-        self.assertIn('comment_token="${OZONE_PR_COMMENT_TOKEN:-${GITHUB_TOKEN:-}}"', workflow)
-        self.assertIn('export GH_TOKEN="${comment_token}"', workflow)
+        self.assertIn("issues: write", workflow)
+        self.assertIn("bash scripts/post_pr_comment.sh", workflow)
+        self.assertIn('target_repo="${OZONE_OWNER}/${OZONE_REPO_NAME}"', script)
+        self.assertIn('[ "${target_repo}" = "${current_repo}" ]', script)
+        self.assertIn('export GH_TOKEN="${comment_token}"', script)
 
     def test_pr_workflow_posts_collapsible_comment_body(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "ozone-pr-s3-compatibility.yml").read_text(encoding="utf-8")
+        script = (ROOT / "scripts" / "post_pr_comment.sh").read_text(encoding="utf-8")
 
-        self.assertIn("out/pr-run/comment-body.md", workflow)
-        self.assertIn("<details>", workflow)
-        self.assertIn("<summary>Apache Ozone S3 compatibility result</summary>", workflow)
-        self.assertIn("sed '/^<!-- ozone-s3-compatibility-bot -->$/d' out/pr-run/pr-comment.md", workflow)
-        self.assertIn("--rawfile body out/pr-run/comment-body.md", workflow)
+        self.assertIn("bash scripts/post_pr_comment.sh", workflow)
+        self.assertIn("out/pr-run/comment-body.md", script)
+        self.assertIn("<details>", script)
+        self.assertIn("<summary>Apache Ozone S3 compatibility result</summary>", script)
+        self.assertIn("sed '/^<!-- ozone-s3-compatibility-bot -->$/d'", script)
+        self.assertIn("--rawfile body", script)
+
+
+class PrCommentPostingScriptTests(unittest.TestCase):
+    def run_comment_script(
+        self,
+        env: dict[str, str],
+        gh_exit: int = 0,
+    ) -> tuple[subprocess.CompletedProcess[str], str | None, str | None, bool]:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            gh_log = root / "gh.log"
+            fake_gh = bin_dir / "gh"
+            fake_gh.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    {{
+                      echo "GH_TOKEN=${{GH_TOKEN:-}}"
+                      printf 'ARGS=%s\\n' "$*"
+                    }} > "{gh_log}"
+                    exit {gh_exit}
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o755)
+
+            comment_path = root / "pr-comment.md"
+            body_path = root / "comment-body.md"
+            payload_path = root / "comment-payload.json"
+            comment_path.write_text(
+                "<!-- ozone-s3-compatibility-bot -->\n## Apache Ozone S3 compatibility result\n\nBody\n",
+                encoding="utf-8",
+            )
+
+            script_env = {
+                **env,
+                "PATH": f"{bin_dir}:{env.get('PATH', os.environ.get('PATH', ''))}",
+                "PR_COMMENT_MARKDOWN": str(comment_path),
+                "COMMENT_BODY_PATH": str(body_path),
+                "COMMENT_PAYLOAD_PATH": str(payload_path),
+            }
+            result = subprocess.run(
+                [str(ROOT / "scripts" / "post_pr_comment.sh")],
+                cwd=ROOT,
+                env=script_env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            gh_output = gh_log.read_text(encoding="utf-8") if gh_log.exists() else None
+            body = body_path.read_text(encoding="utf-8") if body_path.exists() else None
+            return result, gh_output, body, payload_path.exists()
+
+    def test_cross_repo_comment_requires_ozone_comment_token(self) -> None:
+        result, gh_output, _body, _payload_exists = self.run_comment_script(
+            {
+                "POST_COMMENT_INPUT": "true",
+                "OZONE_OWNER": "apache",
+                "OZONE_REPO_NAME": "ozone",
+                "OZONE_PR_NUMBER": "10265",
+                "GITHUB_REPOSITORY": "peterxcli/ozone-s3-compatibility",
+                "GITHUB_TOKEN": "current-repo-token",
+            }
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIsNone(gh_output)
+        self.assertIn("Missing OZONE_PR_COMMENT_TOKEN", result.stdout)
+
+    def test_same_repo_comment_can_use_github_token(self) -> None:
+        result, gh_output, body, payload_exists = self.run_comment_script(
+            {
+                "POST_COMMENT_INPUT": "true",
+                "OZONE_OWNER": "peterxcli",
+                "OZONE_REPO_NAME": "ozone-s3-compatibility",
+                "OZONE_PR_NUMBER": "7",
+                "GITHUB_REPOSITORY": "peterxcli/ozone-s3-compatibility",
+                "GITHUB_TOKEN": "current-repo-token",
+            }
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIsNotNone(gh_output)
+        self.assertIn("GH_TOKEN=current-repo-token", gh_output)
+        self.assertIn("repos/peterxcli/ozone-s3-compatibility/issues/7/comments", gh_output)
+        self.assertIsNotNone(body)
+        self.assertIn("<details>", body)
+        self.assertIn("<summary>Apache Ozone S3 compatibility result</summary>", body)
+        self.assertEqual(1, body.count("<!-- ozone-s3-compatibility-bot -->"))
+        self.assertTrue(payload_exists)
+
+    def test_cross_repo_comment_uses_ozone_comment_token(self) -> None:
+        result, gh_output, _body, _payload_exists = self.run_comment_script(
+            {
+                "POST_COMMENT_INPUT": "true",
+                "OZONE_OWNER": "apache",
+                "OZONE_REPO_NAME": "ozone",
+                "OZONE_PR_NUMBER": "10265",
+                "GITHUB_REPOSITORY": "peterxcli/ozone-s3-compatibility",
+                "GITHUB_TOKEN": "current-repo-token",
+                "OZONE_PR_COMMENT_TOKEN": "ozone-comment-token",
+            }
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIsNotNone(gh_output)
+        self.assertIn("GH_TOKEN=ozone-comment-token", gh_output)
+        self.assertIn("repos/apache/ozone/issues/10265/comments", gh_output)
+
+    def test_comment_api_failure_does_not_fail_workflow(self) -> None:
+        result, gh_output, _body, _payload_exists = self.run_comment_script(
+            {
+                "POST_COMMENT_INPUT": "true",
+                "OZONE_OWNER": "apache",
+                "OZONE_REPO_NAME": "ozone",
+                "OZONE_PR_NUMBER": "10265",
+                "GITHUB_REPOSITORY": "peterxcli/ozone-s3-compatibility",
+                "OZONE_PR_COMMENT_TOKEN": "ozone-comment-token",
+            },
+            gh_exit=1,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIsNotNone(gh_output)
+        self.assertIn("Failed to post PR comment", result.stdout)
 
 
 class OzoneFailureFixerSkillTests(unittest.TestCase):

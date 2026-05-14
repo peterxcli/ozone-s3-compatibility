@@ -18,6 +18,8 @@ In this repository:
 
 - `OZONE_PR_COMMENT_TOKEN`: token that can create issue comments on the Ozone repository.
 
+The workflow `GITHUB_TOKEN` can only comment in this repository. Posting back to `apache/ozone` requires `OZONE_PR_COMMENT_TOKEN`; without it, the comparison remains available in the Actions summary and artifact.
+
 In the Ozone repository or GitHub App that receives PR comments:
 
 - `S3_COMPAT_DISPATCH_TOKEN`: token that can call `repository_dispatch` on this repository.

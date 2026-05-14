@@ -63,6 +63,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: ozone-pr-s3-compatibility-${{ github.event.client_payload.pr_number || inputs.ozone_pr_number || github.run_id }}
@@ -244,35 +245,7 @@ jobs:
           OZONE_PR_COMMENT_TOKEN: ${{ secrets.OZONE_PR_COMMENT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}
         run: |
-          set -euo pipefail
-          post_comment="${POST_COMMENT_INPUT:-true}"
-          if [ "${post_comment}" = "false" ]; then
-            echo "post_comment is false; leaving markdown in the workflow artifact."
-            exit 0
-          fi
-          comment_token="${OZONE_PR_COMMENT_TOKEN:-${GITHUB_TOKEN:-}}"
-          if [ -z "${comment_token}" ]; then
-            echo "Missing OZONE_PR_COMMENT_TOKEN or GITHUB_TOKEN; leaving markdown in the workflow artifact."
-            cat out/pr-run/pr-comment.md
-            exit 0
-          fi
-          export GH_TOKEN="${comment_token}"
-
-          {
-            echo "<!-- ozone-s3-compatibility-bot -->"
-            echo "<details>"
-            echo "<summary>Apache Ozone S3 compatibility result</summary>"
-            echo
-            sed '/^<!-- ozone-s3-compatibility-bot -->$/d' out/pr-run/pr-comment.md
-            echo
-            echo "</details>"
-          } > out/pr-run/comment-body.md
-
-          jq -n --rawfile body out/pr-run/comment-body.md '{body: $body}' > out/pr-run/comment-payload.json
-          gh api \
-            --method POST \
-            "repos/${OZONE_OWNER}/${OZONE_REPO_NAME}/issues/${OZONE_PR_NUMBER}/comments" \
-            --input out/pr-run/comment-payload.json
+          bash scripts/post_pr_comment.sh
 
       - name: Upload PR run artifacts
         if: ${{ always() }}
