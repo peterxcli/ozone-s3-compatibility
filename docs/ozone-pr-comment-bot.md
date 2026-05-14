@@ -33,7 +33,8 @@ Send this repository a `repository_dispatch` event:
     "ozone_owner": "apache",
     "ozone_repo_name": "ozone",
     "pr_number": "12345",
-    "head_sha_short": "abcdef123456",
+    "head_sha_short": "abcdef12",
+    "upstream_sha_short": "1234abcd",
     "comment_url": "https://github.com/apache/ozone/pull/12345#issuecomment-1",
     "comment_id": "1234567890",
     "requested_by": "github-user",
@@ -78,6 +79,11 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.issue.number
             });
+            const { data: upstream } = await github.rest.repos.getBranch({
+              owner: 'apache',
+              repo: 'ozone',
+              branch: 'master'
+            });
 
             await github.rest.repos.createDispatchEvent({
               owner: 'peterxcli',
@@ -88,7 +94,8 @@ jobs:
                 ozone_repo_name: context.repo.repo,
                 pr_number: String(context.issue.number),
                 head_sha: pull.head.sha,
-                head_sha_short: pull.head.sha.slice(0, 12),
+                head_sha_short: pull.head.sha.slice(0, 8),
+                upstream_sha_short: upstream.commit.sha.slice(0, 8),
                 head_ref: pull.head.ref,
                 comment_url: context.payload.comment.html_url,
                 comment_id: String(context.payload.comment.id),
@@ -105,6 +112,7 @@ jobs:
 ## Manual Run
 
 Use the `ozone-pr-s3-compatibility` workflow dispatch form and provide the Ozone PR number. Manual runs use the same comparison and artifact behavior, and can skip posting by setting `post_comment` to `false`.
+For the full Actions run title, also provide `ozone_head_sha_short` and `ozone_upstream_sha_short` as 8-character commit prefixes.
 
 ## Agent-Assisted Fixing
 

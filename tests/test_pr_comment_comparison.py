@@ -232,13 +232,27 @@ class ComparisonMarkdownTests(unittest.TestCase):
 
 
 class WorkflowDisplayTests(unittest.TestCase):
-    def test_pr_workflow_run_name_uses_pr_number_and_dispatch_commit(self) -> None:
+    def test_pr_workflow_run_name_uses_pr_and_upstream_commits(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "ozone-pr-s3-compatibility.yml").read_text(encoding="utf-8")
 
-        self.assertIn("run-name:", workflow)
+        self.assertIn("run-name: PR Run Comparison for", workflow)
+        self.assertIn("github.event.client_payload.ozone_owner || inputs.ozone_owner || 'apache'", workflow)
+        self.assertIn("github.event.client_payload.ozone_repo_name || inputs.ozone_repo_name || 'ozone'", workflow)
         self.assertIn("github.event.client_payload.pr_number", workflow)
         self.assertIn("github.event.client_payload.head_sha_short", workflow)
         self.assertIn("inputs.ozone_head_sha_short", workflow)
+        self.assertIn("against apache/ozone master at", workflow)
+        self.assertIn("github.event.client_payload.upstream_sha_short", workflow)
+        self.assertIn("inputs.ozone_upstream_sha_short", workflow)
+
+    def test_pr_comment_forwarder_sends_eight_character_title_shas(self) -> None:
+        docs = (ROOT / "docs" / "ozone-pr-comment-bot.md").read_text(encoding="utf-8")
+
+        self.assertIn('"upstream_sha_short": "1234abcd"', docs)
+        self.assertIn("github.rest.repos.getBranch", docs)
+        self.assertIn("branch: 'master'", docs)
+        self.assertIn("head_sha_short: pull.head.sha.slice(0, 8)", docs)
+        self.assertIn("upstream_sha_short: upstream.commit.sha.slice(0, 8)", docs)
 
     def test_pr_workflow_writes_comparison_to_action_summary(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "ozone-pr-s3-compatibility.yml").read_text(encoding="utf-8")
@@ -246,6 +260,23 @@ class WorkflowDisplayTests(unittest.TestCase):
         self.assertIn("Publish comparison summary", workflow)
         self.assertIn("GITHUB_STEP_SUMMARY", workflow)
         self.assertIn("cat out/pr-run/pr-comment.md", workflow)
+
+    def test_pr_workflow_post_comment_uses_configured_github_token(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ozone-pr-s3-compatibility.yml").read_text(encoding="utf-8")
+
+        self.assertIn("OZONE_PR_COMMENT_TOKEN: ${{ secrets.OZONE_PR_COMMENT_TOKEN }}", workflow)
+        self.assertIn("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}", workflow)
+        self.assertIn('comment_token="${OZONE_PR_COMMENT_TOKEN:-${GITHUB_TOKEN:-}}"', workflow)
+        self.assertIn('export GH_TOKEN="${comment_token}"', workflow)
+
+    def test_pr_workflow_posts_collapsible_comment_body(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ozone-pr-s3-compatibility.yml").read_text(encoding="utf-8")
+
+        self.assertIn("out/pr-run/comment-body.md", workflow)
+        self.assertIn("<details>", workflow)
+        self.assertIn("<summary>Apache Ozone S3 compatibility result</summary>", workflow)
+        self.assertIn("sed '/^<!-- ozone-s3-compatibility-bot -->$/d' out/pr-run/pr-comment.md", workflow)
+        self.assertIn("--rawfile body out/pr-run/comment-body.md", workflow)
 
 
 class OzoneFailureFixerSkillTests(unittest.TestCase):

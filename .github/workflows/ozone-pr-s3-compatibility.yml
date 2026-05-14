@@ -1,6 +1,6 @@
 name: ozone-pr-s3-compatibility
 
-run-name: Ozone PR #${{ github.event.client_payload.pr_number || inputs.ozone_pr_number || 'unknown' }} @ ${{ github.event.client_payload.head_sha_short || inputs.ozone_head_sha_short || 'resolving' }}
+run-name: PR Run Comparison for ${{ github.event.client_payload.ozone_owner || inputs.ozone_owner || 'apache' }}/${{ github.event.client_payload.ozone_repo_name || inputs.ozone_repo_name || 'ozone' }} PR#${{ github.event.client_payload.pr_number || inputs.ozone_pr_number || 'unknown' }} at ${{ github.event.client_payload.head_sha_short || inputs.ozone_head_sha_short || 'resolving' }} against apache/ozone master at ${{ github.event.client_payload.upstream_sha_short || inputs.ozone_upstream_sha_short || 'resolving' }}
 
 on:
   repository_dispatch:
@@ -23,7 +23,12 @@ on:
         required: true
         type: string
       ozone_head_sha_short:
-        description: "Optional Ozone PR head short SHA for the workflow run title"
+        description: "Optional Ozone PR head short SHA, preferably 8 characters, for the workflow run title"
+        required: false
+        default: ""
+        type: string
+      ozone_upstream_sha_short:
+        description: "Optional apache/ozone master short SHA, preferably 8 characters, for the workflow run title"
         required: false
         default: ""
         type: string
@@ -236,7 +241,8 @@ jobs:
       - name: Post result comment
         if: ${{ always() && hashFiles('out/pr-run/pr-comment.md') != '' }}
         env:
-          GH_TOKEN: ${{ secrets.OZONE_PR_COMMENT_TOKEN }}
+          OZONE_PR_COMMENT_TOKEN: ${{ secrets.OZONE_PR_COMMENT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}
         run: |
           set -euo pipefail
           post_comment="${POST_COMMENT_INPUT:-true}"
@@ -244,13 +250,25 @@ jobs:
             echo "post_comment is false; leaving markdown in the workflow artifact."
             exit 0
           fi
-          if [ -z "${GH_TOKEN}" ]; then
-            echo "Missing OZONE_PR_COMMENT_TOKEN; leaving markdown in the workflow artifact."
+          comment_token="${OZONE_PR_COMMENT_TOKEN:-${GITHUB_TOKEN:-}}"
+          if [ -z "${comment_token}" ]; then
+            echo "Missing OZONE_PR_COMMENT_TOKEN or GITHUB_TOKEN; leaving markdown in the workflow artifact."
             cat out/pr-run/pr-comment.md
             exit 0
           fi
+          export GH_TOKEN="${comment_token}"
 
-          jq -n --rawfile body out/pr-run/pr-comment.md '{body: $body}' > out/pr-run/comment-payload.json
+          {
+            echo "<!-- ozone-s3-compatibility-bot -->"
+            echo "<details>"
+            echo "<summary>Apache Ozone S3 compatibility result</summary>"
+            echo
+            sed '/^<!-- ozone-s3-compatibility-bot -->$/d' out/pr-run/pr-comment.md
+            echo
+            echo "</details>"
+          } > out/pr-run/comment-body.md
+
+          jq -n --rawfile body out/pr-run/comment-body.md '{body: $body}' > out/pr-run/comment-payload.json
           gh api \
             --method POST \
             "repos/${OZONE_OWNER}/${OZONE_REPO_NAME}/issues/${OZONE_PR_NUMBER}/comments" \
