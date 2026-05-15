@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
   "partitioned": true,
-  "generated_at": "2026-05-14T08:41:06Z",
-  "index_id": "2026-05-14T08:41:06Z-31986-f4e770637b9d44a8",
-  "row_count": 31986,
+  "generated_at": "2026-05-15T07:11:41Z",
+  "index_id": "2026-05-15T07:11:41Z-32616-a52ece71bef08380",
+  "row_count": 32616,
   "partitions": {
     "rows": [
       "search/rows-000.json",
