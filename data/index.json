@@ -1,20 +1,21 @@
 {
   "schema_version": 2,
   "partitioned": true,
-  "generated_at": "2026-05-15T07:11:41Z",
+  "generated_at": "2026-05-16T06:41:36Z",
   "rate_formula": "compatibility_rate = passed / (passed + failed + errored); skipped and NA are excluded",
   "suite_order": [
     "s3_tests",
     "mint"
   ],
-  "run_count": 50,
+  "run_count": 51,
   "partitions": {
     "runs": [
       "index/runs-000.json",
       "index/runs-001.json",
       "index/runs-002.json",
       "index/runs-003.json",
-      "index/runs-004.json"
+      "index/runs-004.json",
+      "index/runs-005.json"
     ],
     "charts_overall": "index/charts-overall.json",
     "charts_features": {
