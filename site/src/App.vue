@@ -108,7 +108,6 @@ const caseSnippet = reactive<CaseSnippetState>({
 });
 let searchRequestSequence = 0;
 let snippetRequestSequence = 0;
-let pageScrollYBeforeModal = 0;
 let applyingSharedUrlState = false;
 let searchSessionPromise: Promise<SearchSession | null> | null = null;
 let searchPreloadScheduled = false;
@@ -630,8 +629,6 @@ function lockPageScroll(): void {
   if (document.body.classList.contains("modal-open")) {
     return;
   }
-  pageScrollYBeforeModal = window.scrollY;
-  document.body.style.top = `-${pageScrollYBeforeModal}px`;
   document.body.classList.add("modal-open");
 }
 
@@ -640,9 +637,6 @@ function unlockPageScroll(): void {
     return;
   }
   document.body.classList.remove("modal-open");
-  document.body.style.top = "";
-  window.scrollTo(0, pageScrollYBeforeModal);
-  pageScrollYBeforeModal = 0;
 }
 
 function canScrollElementInDirection(element: HTMLElement, deltaY: number): boolean {

@@ -24,6 +24,14 @@ test("page scroll is locked while the modal is open", () => {
   assert.match(stylesSource, /body\.modal-open/);
 });
 
+test("closing the modal does not force the page back to the opening scroll position", () => {
+  const modalOpenRule = stylesSource.match(/body\.modal-open\s*\{[^}]+\}/s)?.[0] || "";
+
+  assert.doesNotMatch(appSource, /window\.scrollTo\(0,\s*pageScrollYBeforeModal\)/);
+  assert.doesNotMatch(appSource, /document\.body\.style\.top/);
+  assert.doesNotMatch(modalOpenRule, /position:\s*fixed/);
+});
+
 test("modal traps wheel and touch overscroll at scroll boundaries", () => {
   assert.match(appSource, /function handleModalBackdropWheel\(event: WheelEvent\): void/);
   assert.match(appSource, /function handleModalBackdropTouchStart\(event: TouchEvent\): void/);
