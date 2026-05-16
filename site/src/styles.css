@@ -1178,6 +1178,13 @@ th {
   min-width: 0;
 }
 
+.case-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 .case-item h5 {
   margin: 0;
   font-size: 0.96rem;

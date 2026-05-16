@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 
+import { storedCaseSearchResult } from "../lib/caseResult";
 import {
   CASE_BATCH_SIZE,
   compareFeatureRateWithPrevious,
@@ -10,11 +11,14 @@ import {
   statusClass,
   summarizeFeatureComparisons,
 } from "../lib/report";
+import { caseIdentityForResult, searchUrlFromState } from "../lib/shareState";
+import type { SearchResult } from "../lib/search";
 import type {
   CaseStatusChange,
   FeatureComparison,
   FeatureComparisonSummary,
   FeatureSummaryRecord,
+  FullRun,
   StoredCaseEntry,
   SuiteRecord,
 } from "../lib/types";
@@ -31,16 +35,25 @@ const CASE_CHANGE_PREVIEW_LIMIT = 12;
 
 const props = withDefaults(
   defineProps<{
+    run: FullRun;
+    runFile?: string;
     suiteKey: string;
     suite: SuiteRecord;
     previousSuite?: SuiteRecord | null;
     openByDefault?: boolean;
+    isLatestRun?: boolean;
   }>(),
   {
+    runFile: "",
     previousSuite: null,
     openByDefault: true,
+    isLatestRun: false,
   }
 );
+
+const emit = defineEmits<{
+  "open-case": [result: SearchResult];
+}>();
 
 const isOpen = ref<boolean>(props.openByDefault);
 const featureCaseDisplayCount = reactive<Record<string, number>>({});
@@ -208,6 +221,30 @@ function caseStatusLabel(status: string): string {
 
 function featureCountText(count: number, state: "improved" | "degraded"): string {
   return `${count} feature${count === 1 ? "" : "s"} ${state}`;
+}
+
+function caseResult(entry: StoredCaseEntry): SearchResult {
+  return storedCaseSearchResult({
+    run: props.run,
+    suiteKey: props.suiteKey,
+    suite: props.suite,
+    caseEntry: entry,
+    runFile: props.runFile,
+    isLatestRun: props.isLatestRun,
+  });
+}
+
+function openCaseDetails(entry: StoredCaseEntry): void {
+  emit("open-case", caseResult(entry));
+}
+
+function casePermalink(entry: StoredCaseEntry): string {
+  return searchUrlFromState(
+    {
+      selectedCase: caseIdentityForResult(caseResult(entry)),
+    },
+    window.location.href,
+  );
 }
 
 function handleToggle(event: Event): void {
@@ -379,6 +416,10 @@ function handleFeatureToggle(panel: FeaturePanel, event: Event): void {
                   <span class="status-pill" :class="statusClass(entry.status)">
                     {{ String(entry.status || "unknown").replace(/_/g, " ") }}
                   </span>
+                </div>
+                <div class="case-item-actions">
+                  <button class="inline-button" type="button" @click.stop="openCaseDetails(entry)">Details</button>
+                  <a class="inline-button" :href="casePermalink(entry)" @click.stop>Permalink</a>
                 </div>
                 <div class="case-meta subtle mono">
                   <span v-if="entry.classname">{{ entry.classname }}</span>

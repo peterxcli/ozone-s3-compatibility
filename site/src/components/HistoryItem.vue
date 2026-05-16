@@ -13,6 +13,7 @@ import {
   summarizeFeatureComparisons,
   suiteLabel,
 } from "../lib/report";
+import type { SearchResult } from "../lib/search";
 import type {
   FeatureComparisonSummary,
   FullRun,
@@ -50,6 +51,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   toggle: [payload: HistoryTogglePayload];
   retry: [summary: RunSummary];
+  "open-case": [result: SearchResult];
 }>();
 
 const anchorId = computed(() => archivedRunAnchorId(props.summary, props.runIndex));
@@ -78,6 +80,10 @@ function handleToggle(event: Event): void {
 
 function retry(): void {
   emit("retry", props.summary);
+}
+
+function openCase(result: SearchResult): void {
+  emit("open-case", result);
 }
 </script>
 
@@ -125,9 +131,12 @@ function retry(): void {
       <RunDetails
         v-else-if="runData"
         :run="runData"
+        :run-file="summary.file"
         :previous-run="previousRun"
         :suite-order="suiteOrder"
         :default-suite-open="false"
+        :is-latest-run="false"
+        @open-case="openCase"
       />
       <div v-else class="loader history-detail-state">Open this run to load its full detail.</div>
     </div>

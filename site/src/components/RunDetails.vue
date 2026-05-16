@@ -13,6 +13,7 @@ import {
   summarizeFeatureComparisons,
   suiteLabel,
 } from "../lib/report";
+import type { SearchResult } from "../lib/search";
 import type { FeatureComparisonSummary, FullRun, RunLike } from "../lib/types";
 
 interface RunSuiteFeatureMovement {
@@ -24,16 +25,24 @@ interface RunSuiteFeatureMovement {
 const props = withDefaults(
   defineProps<{
     run: FullRun;
+    runFile?: string;
     previousRun?: RunLike | null;
     suiteOrder?: string[];
     defaultSuiteOpen?: boolean;
+    isLatestRun?: boolean;
   }>(),
   {
+    runFile: "",
     previousRun: null,
     suiteOrder: () => [],
     defaultSuiteOpen: true,
+    isLatestRun: false,
   }
 );
+
+const emit = defineEmits<{
+  "open-case": [result: SearchResult];
+}>();
 
 const orderedSuites = computed(() => orderedSuitesFromRun(props.run, props.suiteOrder));
 const previousSuites = computed(() => props.previousRun?.suites || {});
@@ -63,6 +72,10 @@ const showDatanodesChip = computed(
 
 function featureCountText(count: number, state: "improved" | "degraded"): string {
   return `${count} feature${count === 1 ? "" : "s"} ${state}`;
+}
+
+function openCase(result: SearchResult): void {
+  emit("open-case", result);
 }
 </script>
 
@@ -100,10 +113,14 @@ function featureCountText(count: number, state: "improved" | "degraded"): string
       <SuiteCard
         v-for="entry in orderedSuites"
         :key="entry.key"
+        :run="run"
+        :run-file="runFile"
         :suite-key="entry.key"
         :suite="entry.suite"
         :previous-suite="previousSuites[entry.key] || null"
         :open-by-default="defaultSuiteOpen"
+        :is-latest-run="isLatestRun"
+        @open-case="openCase"
       />
     </div>
   </div>

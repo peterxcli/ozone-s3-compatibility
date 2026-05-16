@@ -97,6 +97,7 @@ const searchLoading = ref<boolean>(false);
 const searchIndexProgress = ref<SearchIndexLoadProgress | null>(null);
 const searchError = ref<string>("");
 const selectedSearchResult = ref<SearchResult | null>(null);
+const selectedSearchResultOrigin = ref<"search" | "run-detail">("search");
 const caseSnippet = reactive<CaseSnippetState>({
   loading: false,
   text: "",
@@ -195,7 +196,11 @@ const searchResultSummary = computed<string>(() => {
 });
 const highlightedSearchSnippet = computed<string>(() => highlightCode(caseSnippet.text, caseSnippet.language));
 const selectedSearchPermalink = computed<string>(() =>
-  selectedSearchResult.value ? searchUrlForResult(selectedSearchResult.value) : ""
+  selectedSearchResult.value
+    ? searchUrlForResult(selectedSearchResult.value, {
+        includeCurrentSearch: selectedSearchResultOrigin.value === "search",
+      })
+    : ""
 );
 const selectedSearchFields = computed<{ label: string; value: string }[]>(() => {
   const result = selectedSearchResult.value;
@@ -531,11 +536,15 @@ function normalizedSuiteFilter(value: string): string {
   return value === "all" || suiteOrder.value.includes(value) ? value : "all";
 }
 
-function searchUrlForResult(result: SearchResult): string {
+function searchUrlForResult(
+  result: SearchResult,
+  options: { includeCurrentSearch?: boolean } = {},
+): string {
+  const { includeCurrentSearch = true } = options;
   return searchUrlFromState(
     {
-      query: trimmedSearchQuery.value,
-      suiteFilter: searchSuiteFilter.value,
+      query: includeCurrentSearch ? trimmedSearchQuery.value : "",
+      suiteFilter: includeCurrentSearch ? searchSuiteFilter.value : "all",
       selectedCase: caseIdentityForResult(result),
     },
     window.location.href,
@@ -788,9 +797,13 @@ async function loadSearchResultSnippet(result: SearchResult, requestId: number):
   }
 }
 
-function openSearchResultModal(result: SearchResult, options: { syncUrl?: boolean } = {}): void {
-  const { syncUrl = true } = options;
+function openSearchResultModal(
+  result: SearchResult,
+  options: { syncUrl?: boolean; origin?: "search" | "run-detail" } = {},
+): void {
+  const { syncUrl = true, origin = "search" } = options;
   lockPageScroll();
+  selectedSearchResultOrigin.value = origin;
   selectedSearchResult.value = result;
   const requestId = ++snippetRequestSequence;
   void loadSearchResultSnippet(result, requestId);
@@ -802,12 +815,17 @@ function openSearchResultModal(result: SearchResult, options: { syncUrl?: boolea
 function closeSearchResultModal(options: { syncUrl?: boolean } = {}): void {
   const { syncUrl = true } = options;
   selectedSearchResult.value = null;
+  selectedSearchResultOrigin.value = "search";
   snippetRequestSequence += 1;
   resetCaseSnippet();
   unlockPageScroll();
   if (syncUrl) {
     syncSearchUrl(null);
   }
+}
+
+function openRunDetailCaseModal(result: SearchResult): void {
+  openSearchResultModal(result, { syncUrl: false, origin: "run-detail" });
 }
 
 async function openSelectedSearchRun(): Promise<void> {
@@ -1239,9 +1257,12 @@ onBeforeUnmount(() => {
             <RunDetails
               v-else-if="latestRun"
               :run="latestRun"
+              :run-file="latestSummary.file"
               :previous-run="comparisonRunForRunOrdinal(0)"
               :suite-order="suiteOrder"
               :default-suite-open="true"
+              :is-latest-run="true"
+              @open-case="openRunDetailCaseModal"
             />
           </div>
         </section>
@@ -1273,6 +1294,7 @@ onBeforeUnmount(() => {
               :expanded="isHistoryExpanded(summary.id)"
               @toggle="handleHistoryToggle"
               @retry="retryHistoryLoad"
+              @open-case="openRunDetailCaseModal"
             />
           </div>
         </section>
