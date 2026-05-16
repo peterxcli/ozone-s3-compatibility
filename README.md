@@ -4,7 +4,7 @@ Runs Apache Ozone against `ceph/s3-tests` and `minio/mint`, normalizes the resul
 
 The report includes suite trends, feature summaries, archived run details, and shareable test-case search.
 
-https://github.com/user-attachments/assets/a2706a61-8d21-4510-8be1-613d8c384672
+https://github.com/user-attachments/assets/bf2decf9-bb98-48da-bcbf-e2a2951806f9
 
 ## Workflows
 
