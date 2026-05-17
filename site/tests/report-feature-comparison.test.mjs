@@ -159,6 +159,32 @@ test("does not infer case flips from an index summary without stored case metada
   assert.deepEqual(comparison.noLongerPassing, []);
 });
 
+test("does not infer non-passing-only case flips from a catalog suite without stored case rows", () => {
+  const current = suite(summary(1, 1), [
+    { classname: "s3tests.functional.test_bucket", name: "test_regressed", status: "fail", features: ["bucket"] },
+  ], "non_passing_only");
+  const previousCatalogSuite = {
+    label: "s3-tests",
+    status: "completed",
+    summary: summary(2, 0),
+    feature_summaries: [
+      {
+        name: "bucket",
+        label: "bucket",
+        summary: summary(2, 0),
+      },
+    ],
+    included_case_strategy: "non_passing_only",
+  };
+
+  const comparison = compareFeatureWithPrevious(current, previousCatalogSuite, "bucket");
+
+  assert.equal(comparison.direction, "regressed");
+  assert.equal(comparison.delta, -0.5);
+  assert.deepEqual(comparison.nowPassing, []);
+  assert.deepEqual(comparison.noLongerPassing, []);
+});
+
 test("compares feature pass rate without scanning stored test cases", () => {
   const current = suite(summary(3, 1), [
     { classname: "s3tests.functional.test_bucket", name: "test_fixed", status: "pass", features: ["bucket"] },

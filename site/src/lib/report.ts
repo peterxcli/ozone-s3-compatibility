@@ -110,10 +110,14 @@ function suiteStoresAllCases(suite: SuiteRecord | null | undefined): boolean {
   return Boolean(suite?.included_case_strategy === "all" && Array.isArray(suite.cases));
 }
 
+function suiteStoresNonPassingCases(suite: SuiteRecord | null | undefined): boolean {
+  return Boolean(suite?.included_case_strategy === "non_passing_only" && Array.isArray(suite.non_passing_cases));
+}
+
 function missingCaseStatusForSuite(suite: SuiteRecord | null | undefined): "pass" | "not_run" | null {
   if (!suite) return null;
   if (suiteStoresAllCases(suite)) return "not_run";
-  if (suite.included_case_strategy === "non_passing_only") return "pass";
+  if (suiteStoresNonPassingCases(suite)) return "pass";
   return null;
 }
 

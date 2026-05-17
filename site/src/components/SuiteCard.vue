@@ -183,7 +183,7 @@ function featureDeltaClass(comparison: FeatureComparison): string {
 }
 
 function suiteHasCaseMetadata(suite: SuiteRecord | null | undefined): boolean {
-  return Boolean(suite?.included_case_strategy || Array.isArray(suite?.cases) || Array.isArray(suite?.non_passing_cases));
+  return Boolean(Array.isArray(suite?.cases) || Array.isArray(suite?.non_passing_cases));
 }
 
 function featureComparisonForPanel(panel: FeaturePanel): FeatureComparison {

@@ -107,5 +107,7 @@ test("defers stored case comparison until a feature detail is opened", () => {
   assert.match(suiteCardSource, /compareFeatureRateWithPrevious/);
   assert.match(suiteCardSource, /featureCaseComparisons/);
   assert.match(suiteCardSource, /handleFeatureToggle/);
+  assert.match(suiteCardSource, /Array\.isArray\(suite\?\.cases\) \|\| Array\.isArray\(suite\?\.non_passing_cases\)/);
   assert.doesNotMatch(suiteCardSource, /comparison:\s*compareFeatureWithPrevious/);
+  assert.doesNotMatch(suiteCardSource, /suite\?\.included_case_strategy \|\| Array\.isArray/);
 });
