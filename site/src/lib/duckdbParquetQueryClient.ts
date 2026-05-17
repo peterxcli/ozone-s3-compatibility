@@ -1,6 +1,4 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
-import duckdbMvpWasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
-import duckdbMvpWorker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
 import { PARQUET_FILE_REF } from "./parquetReport";
@@ -12,12 +10,22 @@ interface DuckDbParquetQueryClientOptions {
   cacheMode?: ParquetCacheMode;
 }
 
-const DUCKDB_BUNDLES: duckdb.DuckDBBundles = {
-  mvp: {
-    mainModule: duckdbMvpWasm,
-    mainWorker: duckdbMvpWorker,
-  },
-};
+const DUCKDB_CDN_VERSION = duckdb.PACKAGE_VERSION;
+const DUCKDB_CDN_BASE_URL = `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${DUCKDB_CDN_VERSION}/dist/`;
+
+function pinnedJsDelivrBundles(): duckdb.DuckDBBundles {
+  const mvpBundle = duckdb.getJsDelivrBundles().mvp;
+  if (!mvpBundle) {
+    throw new Error("DuckDB-WASM MVP CDN bundle is unavailable.");
+  }
+  return {
+    mvp: {
+      ...mvpBundle,
+      mainModule: `${DUCKDB_CDN_BASE_URL}duckdb-mvp.wasm`,
+      mainWorker: `${DUCKDB_CDN_BASE_URL}duckdb-browser-mvp.worker.js`,
+    },
+  };
+}
 
 function absoluteUrl(path: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) {
@@ -71,7 +79,7 @@ export class DuckDbParquetQueryClient implements ParquetQueryClient {
   private async database(): Promise<duckdb.AsyncDuckDB> {
     if (!this.dbPromise) {
       this.dbPromise = (async () => {
-        const bundle = await duckdb.selectBundle(DUCKDB_BUNDLES);
+        const bundle = await duckdb.selectBundle(pinnedJsDelivrBundles());
         const workerUrl = URL.createObjectURL(
           new Blob([`importScripts(${JSON.stringify(absoluteUrl(bundle.mainWorker!))});`], {
             type: "text/javascript",

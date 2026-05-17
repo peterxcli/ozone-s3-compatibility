@@ -616,12 +616,20 @@ export async function fetchParquetIndexPayload(indexPath: string, client: Parque
 }
 
 export async function fetchParquetRunPayload(summary: RunSummary, client: ParquetQueryClient): Promise<FullRun> {
-  const [metadataRows, suiteRows, featureRows, logFileRows] = await Promise.all([
+  const [metadataRows, suiteRows, featureRows] = await Promise.all([
     client.queryRows<ParquetMetadataRow>(detailPath(summary, "metadata.parquet"), selectAllParquetSql()),
     client.queryRows<ParquetSuiteRow>(detailPath(summary, "suites.parquet"), selectAllParquetSql("suite_key")),
     client.queryRows<ParquetFeatureRow>(detailPath(summary, "features.parquet"), selectAllParquetSql("suite_key, name")),
-    client.queryRows<ParquetLogFileRow>(detailPath(summary, "log-files.parquet"), selectAllParquetSql("log_source, log_file")),
   ]);
+  let logFileRows: ParquetLogFileRow[] = [];
+  try {
+    logFileRows = await client.queryRows<ParquetLogFileRow>(
+      detailPath(summary, "log-files.parquet"),
+      selectAllParquetSql("log_source, log_file"),
+    );
+  } catch {
+    logFileRows = [];
+  }
   const caseRowsBySuite: Record<string, ParquetCaseRow[]> = {};
   await Promise.all(
     suiteRows.map(async (suiteRow) => {

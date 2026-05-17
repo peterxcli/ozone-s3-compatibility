@@ -78,6 +78,23 @@ test("can opt into DuckDB cached HTTP reads for Parquet data", () => {
   assert.match(duckdbClientSource, /falling back to direct HTTP Parquet reads/);
 });
 
+test("loads DuckDB-WASM runtime assets from the pinned CDN bundle", () => {
+  assert.match(duckdbClientSource, /getJsDelivrBundles/);
+  assert.match(duckdbClientSource, /DUCKDB_CDN_VERSION/);
+  assert.match(duckdbClientSource, /cdn\.jsdelivr\.net\/npm\/@duckdb\/duckdb-wasm@\$\{DUCKDB_CDN_VERSION\}\/dist\//);
+  assert.doesNotMatch(duckdbClientSource, /duckdb-mvp\.wasm\?url/);
+  assert.doesNotMatch(duckdbClientSource, /duckdb-browser-mvp\.worker\.js\?url/);
+});
+
+test("keeps explicit Parquet run detail on the Parquet path", () => {
+  const functionSource = reportSource.match(/export async function fetchReportRun[\s\S]*?\n}/)?.[0] ?? "";
+
+  assert.match(functionSource, /summary\.parquet_detail_base_url/);
+  assert.match(functionSource, /return fetchParquetRunPayload\(summary,\s*options\.parquetClient\);/);
+  assert.match(functionSource, /return fetchRun\(summary\.file\);/);
+  assert.doesNotMatch(functionSource, /catch/);
+});
+
 test("shows feature movement rollups at run and suite levels", () => {
   assert.match(reportSource, /function summarizeFeatureComparisons/);
   assert.match(appSource, /featureMovement/);

@@ -40,6 +40,7 @@ symlinkSync(path.join(siteRoot, "node_modules"), path.join(outDir, "node_modules
 const {
   fetchParquetIndexPayload,
   fetchParquetLogLines,
+  fetchParquetRunPayload,
   isParquetReportEnabled,
   normalizeParquetIndex,
   normalizeParquetRun,
@@ -376,6 +377,64 @@ test("normalizes Arrow vector list values from Parquet case feature columns", ()
   });
 
   assert.deepEqual(run.suites.s3_tests.cases[0].features, ["abac_test"]);
+});
+
+test("loads Parquet run detail when optional log file metadata is unavailable", async () => {
+  const summary = normalizeParquetIndex({
+    catalogRows: [catalogRow("run-new", "2026-05-17T02:15:00.000Z")],
+    suiteRows: [suiteRow("run-new", "s3_tests", "s3-tests", 0.5, 1, 1)],
+    featureRows: [featureRow("run-new", "s3_tests", "policy", 0.5, 1, 1)],
+  }).runs[0];
+  const requests = [];
+  const client = {
+    async queryRows(filePath) {
+      requests.push(filePath);
+      if (filePath.endsWith("/metadata.parquet")) {
+        return [
+          {
+            run_id: "run-new",
+            started_at: "2026-05-17T02:15:00.000Z",
+            finished_at: "2026-05-17T02:35:00.000Z",
+            status: "completed",
+            execution_json: JSON.stringify(execution),
+            sources_json: JSON.stringify(sources),
+          },
+        ];
+      }
+      if (filePath.endsWith("/suites.parquet")) {
+        return [suiteRow("run-new", "s3_tests", "s3-tests", 0.5, 1, 1)];
+      }
+      if (filePath.endsWith("/features.parquet")) {
+        return [featureRow("run-new", "s3_tests", "policy", 0.5, 1, 1)];
+      }
+      if (filePath.endsWith("/log-files.parquet")) {
+        throw new Error("optional log file metadata is missing");
+      }
+      if (filePath.endsWith("/cases-s3-tests.parquet")) {
+        return [
+          {
+            run_id: "run-new",
+            suite_key: "s3_tests",
+            case_id: "s3_tests:test_bucket_policy_access_denied",
+            name: "test_bucket_policy_access_denied",
+            classname: "s3tests.functional.test_s3",
+            status: "fail",
+            features: ["policy"],
+            message: "AccessDenied",
+            detail: "full traceback",
+          },
+        ];
+      }
+      throw new Error(`Unexpected Parquet file read: ${filePath}`);
+    },
+  };
+
+  const run = await fetchParquetRunPayload(summary, client);
+
+  assert.equal(run.run_id, "run-new");
+  assert.equal(run.suites.s3_tests.cases.length, 1);
+  assert.deepEqual(run.log_files, []);
+  assert.ok(requests.some((filePath) => filePath.endsWith("/log-files.parquet")));
 });
 
 test("fetches Parquet log lines from a selected log file", async () => {

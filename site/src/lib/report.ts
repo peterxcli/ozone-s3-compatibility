@@ -460,11 +460,7 @@ export async function fetchReportRun(
   options: ReportDataFetchOptions = {},
 ): Promise<FullRun> {
   if (options.parquet && options.parquetClient && summary.parquet_detail_base_url) {
-    try {
-      return await fetchParquetRunPayload(summary, options.parquetClient);
-    } catch {
-      return fetchRun(summary.file);
-    }
+    return fetchParquetRunPayload(summary, options.parquetClient);
   }
   return fetchRun(summary.file);
 }
