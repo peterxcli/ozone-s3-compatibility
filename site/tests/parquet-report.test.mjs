@@ -38,6 +38,7 @@ writeFileSync(path.join(outDir, "package.json"), '{"type":"commonjs"}\n', "utf8"
 symlinkSync(path.join(siteRoot, "node_modules"), path.join(outDir, "node_modules"), "junction");
 
 const {
+  fetchParquetIndexPayload,
   fetchParquetLogLines,
   isParquetReportEnabled,
   normalizeParquetIndex,
@@ -155,58 +156,54 @@ test("fetches remote Parquet catalog details relative to the configured data bas
       if (filePath.endsWith("/catalog/runs.parquet")) {
         return [catalogRow("run-new", "2026-05-17T02:15:00.000Z")];
       }
-      if (filePath.endsWith("/suites.parquet")) {
+      if (filePath.endsWith("/catalog/suites.parquet")) {
         return [suiteRow("run-new", "s3_tests", "s3-tests", 0.5, 1, 1)];
       }
-      if (filePath.endsWith("/features.parquet")) {
+      if (filePath.endsWith("/catalog/features.parquet")) {
         return [featureRow("run-new", "s3_tests", "policy", 0.5, 1, 1)];
       }
-      return [];
+      throw new Error(`Unexpected Parquet file read: ${filePath}`);
     },
   };
 
-  const { fetchParquetIndexPayload } = require(path.join(outDir, "parquetReport.js"));
   const payload = await fetchParquetIndexPayload("https://storage.example/reports/data/index.json", client);
 
   assert.deepEqual(requests, [
     "https://storage.example/reports/data/catalog/runs.parquet",
-    "https://storage.example/reports/data/runs/run-new/suites.parquet",
-    "https://storage.example/reports/data/runs/run-new/features.parquet",
+    "https://storage.example/reports/data/catalog/suites.parquet",
+    "https://storage.example/reports/data/catalog/features.parquet",
   ]);
   assert.equal(payload.runs[0].parquet_detail_base_url, "https://storage.example/reports/data/runs/run-new/");
+  assert.equal(payload.runs[0].suites.s3_tests.feature_summaries[0].name, "policy");
 });
 
-test("limits concurrent Parquet detail queries while loading archived runs", async () => {
-  let activeQueries = 0;
-  let maxActiveQueries = 0;
+test("fetches report index from global catalog Parquet files without run detail scans", async () => {
   const runIds = Array.from({ length: 12 }, (_, index) => `run-${String(index).padStart(2, "0")}`);
+  const requests = [];
   const client = {
     async queryRows(filePath) {
+      requests.push(filePath);
       if (filePath.endsWith("/catalog/runs.parquet")) {
         return runIds.map((runId, index) => catalogRow(runId, `2026-05-${String(17 - index).padStart(2, "0")}T02:15:00.000Z`));
       }
-
-      activeQueries += 1;
-      maxActiveQueries = Math.max(maxActiveQueries, activeQueries);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      activeQueries -= 1;
-
-      const runId = filePath.split("/runs/")[1]?.split("/")[0] || "unknown";
-      if (filePath.endsWith("/suites.parquet")) {
-        return [suiteRow(runId, "s3_tests", "s3-tests", 0.5, 1, 1)];
+      if (filePath.endsWith("/catalog/suites.parquet")) {
+        return runIds.map((runId) => suiteRow(runId, "s3_tests", "s3-tests", 0.5, 1, 1));
       }
-      if (filePath.endsWith("/features.parquet")) {
-        return [featureRow(runId, "s3_tests", "policy", 0.5, 1, 1)];
+      if (filePath.endsWith("/catalog/features.parquet")) {
+        return runIds.map((runId) => featureRow(runId, "s3_tests", "policy", 0.5, 1, 1));
       }
-      return [];
+      throw new Error(`Unexpected Parquet file read: ${filePath}`);
     },
   };
 
-  const { fetchParquetIndexPayload } = require(path.join(outDir, "parquetReport.js"));
   const payload = await fetchParquetIndexPayload("./data/index.json", client);
 
   assert.equal(payload.runs.length, 12);
-  assert.ok(maxActiveQueries <= 6, `expected at most 6 active detail queries, saw ${maxActiveQueries}`);
+  assert.deepEqual(requests, [
+    "./data/catalog/runs.parquet",
+    "./data/catalog/suites.parquet",
+    "./data/catalog/features.parquet",
+  ]);
 });
 
 test("normalizes Parquet catalog, suite, and feature rows to the existing index shape", () => {

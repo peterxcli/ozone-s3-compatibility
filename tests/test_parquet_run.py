@@ -171,6 +171,15 @@ class ParquetRunWriterTests(unittest.TestCase):
             self.assertIn(f"runs/{run['run_id']}/cases-s3-tests.parquet", file_paths)
             self.assertIn(f"runs/{run['run_id']}/logs-pytest.parquet", file_paths)
 
+            catalog_suites = pq.read_table(root / "data" / "catalog" / "suites.parquet").to_pylist()
+            self.assertEqual(["mint", "s3_tests"], sorted(row["suite_key"] for row in catalog_suites))
+            self.assertEqual({run["run_id"]}, {row["run_id"] for row in catalog_suites})
+
+            catalog_features = pq.read_table(root / "data" / "catalog" / "features.parquet").to_pylist()
+            self.assertEqual(["policy"], [row["name"] for row in catalog_features])
+            self.assertEqual(run["run_id"], catalog_features[0]["run_id"])
+            self.assertEqual("s3_tests", catalog_features[0]["suite_key"])
+
             metadata = pq.read_table(root / "data" / "runs" / run["run_id"] / "metadata.parquet").to_pylist()
             self.assertEqual(run["run_id"], metadata[0]["run_id"])
             self.assertIn('"mint_targets": ["awscli"]', metadata[0]["execution_json"])

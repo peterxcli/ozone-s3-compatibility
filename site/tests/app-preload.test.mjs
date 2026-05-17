@@ -13,11 +13,13 @@ const reportSource = readFileSync(path.join(siteRoot, "src", "lib", "report.ts")
 const envSource = readFileSync(path.join(siteRoot, "src", "env.d.ts"), "utf8");
 const duckdbClientSource = readFileSync(path.join(siteRoot, "src", "lib", "duckdbParquetQueryClient.ts"), "utf8");
 
-test("preloads the persistent search session after the report shell is visible", () => {
-  assert.match(appSource, /function scheduleSearchSessionPreload\(\): void \{/);
-  assert.match(appSource, /scheduleSearchSessionPreload\(\);/);
-  assert.match(appSource, /requestIdleCallback/);
-  assert.match(appSource, /void ensureSearchSession\(\);/);
+test("defers search and history detail Parquet files until user demand", () => {
+  assert.doesNotMatch(appSource, /scheduleSearchSessionPreload\(\);/);
+  assert.doesNotMatch(appSource, /void ensureComparisonRunLoadedForRunOrdinal\(0\);/);
+  assert.doesNotMatch(appSource, /const latestPromise = loadLatestRun\(\);/);
+  assert.match(appSource, /@click="loadLatestRun"/);
+  assert.match(appSource, /async function handleHistoryToggle/);
+  assert.match(appSource, /if \(open\) \{[\s\S]*ensureHistoryRunLoaded\(summary\)/);
 });
 
 test("shows search index load progress before a query is entered", () => {
@@ -85,11 +87,12 @@ test("opens archived run suite details when a history run expands", () => {
   assert.match(historyItemSource, /<RunDetails[\s\S]*:default-suite-open="true"/);
 });
 
-test("applies initial section hash navigation after latest run detail settles", () => {
+test("applies initial section hash navigation without loading latest run detail", () => {
   assert.match(
     appSource,
-    /if \(target && \(!searchStateApplied \|\| target !== SEARCH_SECTION_HASH\.slice\(1\)\)\) \{[\s\S]*await latestPromise;[\s\S]*await nextTick\(\);[\s\S]*await navigateToSection\(target, \{ expandArchived: true \}\);[\s\S]*\} else \{[\s\S]*await latestPromise;[\s\S]*\}/,
+    /if \(target && \(!searchStateApplied \|\| target !== SEARCH_SECTION_HASH\.slice\(1\)\)\) \{[\s\S]*await nextTick\(\);[\s\S]*await navigateToSection\(target, \{ expandArchived: true \}\);[\s\S]*\}/,
   );
+  assert.doesNotMatch(appSource, /await latestPromise/);
 });
 
 test("defers stored case comparison until a feature detail is opened", () => {

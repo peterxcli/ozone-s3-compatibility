@@ -731,9 +731,22 @@ def write_pages_parquet_dataset(
     catalog_dir.mkdir(parents=True, exist_ok=True)
 
     file_records: list[dict[str, Any]] = []
-    for run in sorted(runs, key=lambda item: string_field(item.get("started_at"))):
+    runs_oldest_first = sorted(runs, key=lambda item: string_field(item.get("started_at")))
+    runs_newest_first = list(reversed(runs_oldest_first))
+
+    for run in runs_oldest_first:
         run_id = string_field(run.get("run_id") or run.get("id"))
         file_records.extend(write_run_dataset(run, data_dir, raw_roots_by_run_id.get(run_id)))
 
     write_parquet(catalog_dir / "runs.parquet", build_catalog_runs(runs), CATALOG_RUNS_SCHEMA)
+    write_parquet(
+        catalog_dir / "suites.parquet",
+        [row for run in runs_newest_first for row in build_suite_rows(run)],
+        SUITES_SCHEMA,
+    )
+    write_parquet(
+        catalog_dir / "features.parquet",
+        [row for run in runs_newest_first for row in build_feature_rows(run)],
+        FEATURES_SCHEMA,
+    )
     write_parquet(catalog_dir / "files.parquet", file_records, CATALOG_FILES_SCHEMA)

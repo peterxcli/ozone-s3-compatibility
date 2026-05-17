@@ -131,9 +131,6 @@ let snippetRequestSequence = 0;
 let logRequestSequence = 0;
 let applyingSharedUrlState = false;
 let searchSessionPromise: Promise<SearchSession | null> | null = null;
-let searchPreloadScheduled = false;
-let searchPreloadTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-let searchPreloadIdleHandle: number | null = null;
 const parquetReportEnabled = isParquetReportEnabled(
   window.location.search,
   import.meta.env.VITE_REPORT_DATA_FORMAT || "",
@@ -195,11 +192,11 @@ const searchIndexProgressText = computed<string>(() => {
       ? `${searchIndexPayload.value.row_count.toLocaleString()} cases indexed ${
           searchSession.value?.persistent ? "in IndexedDB" : "in memory"
         }`
-      : "Persistent browser search loads in the background.";
+      : "Search index loads when you search.";
   }
 
   if (progress.phase === "scheduled") {
-    return "Search index preload scheduled.";
+    return "Search index load scheduled.";
   }
   if (progress.phase === "downloading") {
     return "Downloading search index.";
@@ -346,10 +343,6 @@ function comparisonRunForRunOrdinal(runOrdinal: number): RunLike | null {
   return runDetailsById[previousSummary.id] || previousSummary;
 }
 
-function runOrdinalForSummary(summary: RunSummary): number {
-  return index.value?.runs?.findIndex((item) => item.id === summary.id) ?? -1;
-}
-
 function historyRunLoading(summaryId: string): boolean {
   return Boolean(runLoading[summaryId]);
 }
@@ -372,20 +365,13 @@ async function bootstrap(): Promise<void> {
       return;
     }
 
-    const latestPromise = loadLatestRun();
-    void ensureComparisonRunLoadedForRunOrdinal(0);
-
     await nextTick();
-    scheduleSearchSessionPreload();
     const searchStateApplied = await applySearchUrlState();
 
     const target = pendingNavigationTarget.value || window.location.hash.slice(1);
     if (target && (!searchStateApplied || target !== SEARCH_SECTION_HASH.slice(1))) {
-      await latestPromise;
       await nextTick();
       await navigateToSection(target, { expandArchived: true });
-    } else {
-      await latestPromise;
     }
   } catch (error) {
     errorMessage.value = errorMessageOf(error);
@@ -395,6 +381,7 @@ async function bootstrap(): Promise<void> {
 
 async function loadLatestRun(): Promise<void> {
   if (!latestSummary.value) return;
+  if (latestRun.value || latestRunLoading.value) return;
 
   latestRunLoading.value = true;
   latestRunError.value = "";
@@ -437,54 +424,6 @@ async function reportDataOptions(): Promise<ReportDataFetchOptions> {
     parquet: true,
     parquetClient: await parquetClientPromise,
   };
-}
-
-async function ensureComparisonRunLoadedForRunOrdinal(runOrdinal: number): Promise<void> {
-  if (runOrdinal < 0) {
-    return;
-  }
-  const previousSummary = previousSummaryForRunOrdinal(runOrdinal);
-  if (previousSummary) {
-    await ensureHistoryRunLoaded(previousSummary);
-  }
-}
-
-function scheduleSearchSessionPreload(): void {
-  if (searchPreloadScheduled || searchSession.value || searchSessionPromise) {
-    return;
-  }
-
-  searchPreloadScheduled = true;
-  searchIndexProgress.value = {
-    phase: "scheduled",
-    indexedRows: 0,
-    totalRows: searchIndexPayload.value?.row_count || 0,
-    persistent: true,
-    fromCache: false,
-  };
-  const preload = () => {
-    searchPreloadTimer = null;
-    searchPreloadIdleHandle = null;
-    void ensureSearchSession();
-  };
-
-  if ("requestIdleCallback" in window) {
-    searchPreloadIdleHandle = window.requestIdleCallback(preload, { timeout: 2000 });
-    return;
-  }
-
-  searchPreloadTimer = globalThis.setTimeout(preload, 250);
-}
-
-function cancelSearchSessionPreload(): void {
-  if (searchPreloadIdleHandle !== null && "cancelIdleCallback" in window) {
-    window.cancelIdleCallback(searchPreloadIdleHandle);
-  }
-  if (searchPreloadTimer !== null) {
-    globalThis.clearTimeout(searchPreloadTimer);
-  }
-  searchPreloadIdleHandle = null;
-  searchPreloadTimer = null;
 }
 
 async function ensureSearchSession(): Promise<SearchSession | null> {
@@ -1006,6 +945,7 @@ async function openSearchResult(result: SearchResult): Promise<void> {
   }
 
   if (runIndex === 0) {
+    await loadLatestRun();
     await navigateToSection("latest-run-section");
     return;
   }
@@ -1038,10 +978,7 @@ function findArchivedSummary(targetId: string): { index: number; summary: RunSum
 async function handleHistoryToggle({ summary, open }: HistoryTogglePayload): Promise<void> {
   expandedHistory[summary.id] = open;
   if (open) {
-    await Promise.all([
-      ensureHistoryRunLoaded(summary),
-      ensureComparisonRunLoadedForRunOrdinal(runOrdinalForSummary(summary)),
-    ]);
+    await ensureHistoryRunLoaded(summary);
   }
 }
 
@@ -1164,7 +1101,6 @@ onBeforeUnmount(() => {
   window.removeEventListener("hashchange", handleHashChange);
   window.removeEventListener("popstate", handleWindowPopstate);
   window.removeEventListener("resize", handleWindowResize);
-  cancelSearchSessionPreload();
   if (selectedLog.value) {
     closeLogModal();
   }
@@ -1420,7 +1356,10 @@ onBeforeUnmount(() => {
           </div>
           <div class="run-details" :class="{ loading: latestRunLoading && !latestRun }">
             <div v-if="latestRunLoading && !latestRun" class="loader">Loading latest run…</div>
-            <div v-else-if="latestRunError" class="loader">{{ latestRunError }}</div>
+            <div v-else-if="latestRunError" class="loader">
+              <span>{{ latestRunError }}</span>
+              <button class="inline-button" type="button" @click="loadLatestRun">Retry</button>
+            </div>
             <RunDetails
               v-else-if="latestRun"
               :run="latestRun"
@@ -1432,6 +1371,9 @@ onBeforeUnmount(() => {
               @open-case="openRunDetailCaseModal"
               @open-log="openLatestRunLogModal"
             />
+            <div v-else class="loader">
+              <button class="inline-button" type="button" @click="loadLatestRun">Load current report detail</button>
+            </div>
           </div>
         </section>
 

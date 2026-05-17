@@ -17,7 +17,6 @@ import type {
 export const PARQUET_FILE_REF = "__PARQUET_FILE__";
 export const REPORT_RATE_FORMULA =
   "compatibility_rate = passed / (passed + failed + errored); skipped and NA are excluded";
-const PARQUET_DETAIL_QUERY_CONCURRENCY = 6;
 
 export interface ParquetQueryClient {
   queryRows<T extends Record<string, unknown>>(filePath: string, sql: string): Promise<T[]>;
@@ -565,45 +564,27 @@ function logLinesSql(limit: number): string {
   return `SELECT * FROM read_parquet(${PARQUET_FILE_REF}) ORDER BY line_number LIMIT ${safeLimit}`;
 }
 
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.min(Math.max(1, concurrency), items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (nextIndex < items.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        results[index] = await mapper(items[index], index);
-      }
-    }),
-  );
-
-  return results;
-}
-
 export async function fetchParquetIndexPayload(indexPath: string, client: ParquetQueryClient): Promise<IndexPayload> {
-  const catalogRows = await client.queryRows<ParquetCatalogRunRow>(
-    resolveParquetDataPath(indexPath, "catalog/runs.parquet"),
-    selectAllParquetSql("started_at DESC"),
-  );
+  const [catalogRows, suiteRows, featureRows] = await Promise.all([
+    client.queryRows<ParquetCatalogRunRow>(
+      resolveParquetDataPath(indexPath, "catalog/runs.parquet"),
+      selectAllParquetSql("started_at DESC"),
+    ),
+    client.queryRows<ParquetSuiteRow>(
+      resolveParquetDataPath(indexPath, "catalog/suites.parquet"),
+      selectAllParquetSql("run_id, suite_key"),
+    ),
+    client.queryRows<ParquetFeatureRow>(
+      resolveParquetDataPath(indexPath, "catalog/features.parquet"),
+      selectAllParquetSql("run_id, suite_key, name"),
+    ),
+  ]);
   const detailPathByRunId = new Map(catalogRows.map((row) => [asString(row.run_id), resolvedParquetDetailBaseUrl(indexPath, row)]));
-  const detailPaths = catalogRows.map((row) => detailPathByRunId.get(asString(row.run_id)) || parquetDetailBaseUrl(row));
-  const detailRowSets = await mapWithConcurrency(detailPaths, PARQUET_DETAIL_QUERY_CONCURRENCY, async (basePath) => {
-    const suiteRows = await client.queryRows<ParquetSuiteRow>(`${basePath}suites.parquet`, selectAllParquetSql("suite_key"));
-    const featureRows = await client.queryRows<ParquetFeatureRow>(`${basePath}features.parquet`, selectAllParquetSql("suite_key, name"));
-    return { suiteRows, featureRows };
-  });
 
   const payload = normalizeParquetIndex({
     catalogRows,
-    suiteRows: detailRowSets.flatMap((rowSet) => rowSet.suiteRows),
-    featureRows: detailRowSets.flatMap((rowSet) => rowSet.featureRows),
+    suiteRows,
+    featureRows,
   });
   payload.runs = payload.runs.map((run) => ({
     ...run,
