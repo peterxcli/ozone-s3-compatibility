@@ -37,6 +37,13 @@ test("renders every archived run summary instead of batching history rows", () =
   assert.doesNotMatch(appSource, /Load \{\{ Math\.min\(historyBatchSize/);
 });
 
+test("shows latest run catalog statistics before loading full run detail", () => {
+  assert.match(appSource, /const latestSuiteSummaries = computed<SuiteSummaryEntry\[\]>/);
+  assert.match(appSource, /class="suite-summary-strip latest-summary-strip"/);
+  assert.match(appSource, /v-for="entry in latestSuiteSummaries"/);
+  assert.match(appSource, /latest-summary-strip[\s\S]*<div class="run-details"/);
+});
+
 test("fetches report JSON without browser cache reuse", () => {
   assert.match(reportSource, /fetch\(path,\s*\{\s*cache:\s*"no-store"\s*\}\)/);
 });

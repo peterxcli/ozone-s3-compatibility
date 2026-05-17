@@ -343,6 +343,7 @@ code,
 }
 
 .run-feature-rollup,
+.latest-feature-rollup,
 .history-feature-rollup {
   margin-top: 0.65rem;
 }
@@ -928,6 +929,10 @@ th {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.latest-summary-strip {
+  margin: 1rem 0;
 }
 
 .suite-summary-chip {

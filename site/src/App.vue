@@ -24,6 +24,7 @@ import {
   fetchReportRun,
   formatDate,
   formatPercent,
+  orderedSuitesFromRun,
   runScope,
   scrollElementIntoView,
   statusClass,
@@ -45,6 +46,7 @@ import type {
   IndexPayload,
   LogFileRecord,
   LogLineRecord,
+  OrderedSuiteEntry,
   RunLike,
   RunSummary,
 } from "./lib/types";
@@ -63,6 +65,10 @@ interface SummaryCard {
   failedOrErrored: number;
   skipped: number;
   delta: number | null;
+  featureMovement: FeatureComparisonSummary;
+}
+
+interface SuiteSummaryEntry extends OrderedSuiteEntry {
   featureMovement: FeatureComparisonSummary;
 }
 
@@ -281,6 +287,16 @@ const summaryCards = computed<SummaryCard[]>(() => {
   });
 
   return cards;
+});
+
+const latestSuiteSummaries = computed<SuiteSummaryEntry[]>(() => {
+  const latest = latestSummary.value;
+  if (!latest) return [];
+
+  return orderedSuitesFromRun(latest, suiteOrder.value).map((entry) => ({
+    ...entry,
+    featureMovement: summarizeFeatureComparisons(entry.suite, index.value?.runs?.[1]?.suites?.[entry.key] || null),
+  }));
 });
 
 watch([trimmedSearchQuery, searchSuiteFilter], () => {
@@ -1353,6 +1369,26 @@ onBeforeUnmount(() => {
               <h2>Current Report</h2>
             </div>
             <p class="panel-note">Run scope is shown with each report so subset publishes are easy to spot.</p>
+          </div>
+          <div v-if="latestSuiteSummaries.length" class="suite-summary-strip latest-summary-strip">
+            <div v-for="entry in latestSuiteSummaries" :key="entry.key" class="suite-summary-chip">
+              <h4>{{ suiteLabel(entry.key) }}</h4>
+              <div class="metric-row">
+                <span class="status-pill" :class="statusClass(entry.suite.status)">
+                  {{ String(entry.suite.status || "unknown").replace(/_/g, " ") }}
+                </span>
+                <span class="pill">{{ formatPercent(entry.suite.summary.compatibility_rate) }}</span>
+                <span class="pill">{{ entry.suite.summary.eligible }} eligible</span>
+              </div>
+              <div v-if="entry.featureMovement.comparable" class="feature-rollup latest-feature-rollup">
+                <span class="feature-rollup-chip improved">
+                  {{ featureCountText(entry.featureMovement.improved, "improved") }}
+                </span>
+                <span class="feature-rollup-chip regressed">
+                  {{ featureCountText(entry.featureMovement.regressed, "degraded") }}
+                </span>
+              </div>
+            </div>
           </div>
           <div class="run-details" :class="{ loading: latestRunLoading && !latestRun }">
             <div v-if="latestRunLoading && !latestRun" class="loader">Loading latest run…</div>
