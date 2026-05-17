@@ -81,29 +81,7 @@ jobs:
             source_dir="out/pages-ui-refresh"
           fi
 
-          cp "${source_dir}/index.html" .pages-repo/index.html
-          cp "${source_dir}/app.js" .pages-repo/app.js
-          cp "${source_dir}/styles.css" .pages-repo/styles.css
-          cp "${source_dir}/social-preview.svg" .pages-repo/social-preview.svg
-          cp "${source_dir}/social-preview.png" .pages-repo/social-preview.png
-          cp "${source_dir}/CNAME" .pages-repo/CNAME
-          if [ -d "${source_dir}/data" ]; then
-            rm -f .pages-repo/data/index.json .pages-repo/data/search-index.json
-            rm -rf .pages-repo/data/index .pages-repo/data/search
-            if [ -d .pages-repo/data/runs ]; then
-              find .pages-repo/data/runs -maxdepth 1 -name '*.json' -delete
-            fi
-          fi
-          if [ -d "${source_dir}/data/catalog" ]; then
-            mkdir -p .pages-repo/data
-            rm -rf .pages-repo/data/catalog
-            cp -R "${source_dir}/data/catalog" .pages-repo/data/catalog
-          fi
-          if [ -d "${source_dir}/data/runs" ]; then
-            mkdir -p .pages-repo/data
-            mkdir -p .pages-repo/data/runs
-            cp -R "${source_dir}/data/runs/." .pages-repo/data/runs
-          fi
+          rsync -a --delete --exclude '.git/' "${source_dir}/" .pages-repo/
           touch .pages-repo/.nojekyll
 
       - name: Commit and push gh-pages
@@ -111,14 +89,7 @@ jobs:
           set -euo pipefail
           git -C .pages-repo config user.name "github-actions[bot]"
           git -C .pages-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C .pages-repo add index.html app.js styles.css social-preview.svg social-preview.png .nojekyll
-          git -C .pages-repo add CNAME
-          if [ -d .pages-repo/data/catalog ]; then
-            git -C .pages-repo add data/catalog
-          fi
-          if [ -d .pages-repo/data/runs ]; then
-            git -C .pages-repo add data/runs
-          fi
+          git -C .pages-repo add -A
           if git -C .pages-repo diff --cached --quiet; then
             echo "No UI changes to publish"
             exit 0

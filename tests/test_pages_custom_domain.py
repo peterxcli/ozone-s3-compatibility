@@ -16,23 +16,23 @@ class PagesCustomDomainTests(unittest.TestCase):
         self.assertTrue(cname_path.exists(), "site/public/CNAME must be published with the built Pages assets")
         self.assertEqual(CUSTOM_DOMAIN, cname_path.read_text(encoding="utf-8").strip())
 
-    def test_refresh_pages_ui_stages_cname_when_present(self) -> None:
+    def test_refresh_pages_ui_syncs_full_generated_site(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "refresh-pages-ui.yml").read_text(encoding="utf-8")
 
-        self.assertIn('cp "${source_dir}/CNAME" .pages-repo/CNAME', workflow)
-        self.assertIn("git -C .pages-repo add CNAME", workflow)
+        self.assertIn('rsync -a --delete --exclude \'.git/\' "${source_dir}/" .pages-repo/', workflow)
+        self.assertIn("git -C .pages-repo add -A", workflow)
+        self.assertNotIn('cp "${source_dir}/app.js" .pages-repo/app.js', workflow)
+        self.assertNotIn('cp "${source_dir}/CNAME" .pages-repo/CNAME', workflow)
 
-    def test_refresh_pages_ui_stages_generated_parquet_data(self) -> None:
+    def test_refresh_pages_ui_stages_generated_parquet_data_deletions(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "refresh-pages-ui.yml").read_text(encoding="utf-8")
 
-        self.assertIn('cp -R "${source_dir}/data/catalog" .pages-repo/data/catalog', workflow)
-        self.assertIn('cp -R "${source_dir}/data/runs/." .pages-repo/data/runs', workflow)
-        self.assertIn("git -C .pages-repo add data/catalog", workflow)
-        self.assertIn("git -C .pages-repo add data/runs", workflow)
-        self.assertIn("rm -f .pages-repo/data/index.json .pages-repo/data/search-index.json", workflow)
+        self.assertIn('rsync -a --delete --exclude \'.git/\' "${source_dir}/" .pages-repo/', workflow)
+        self.assertIn("git -C .pages-repo add -A", workflow)
         self.assertNotIn('cp "${source_dir}/data/search-index.json"', workflow)
         self.assertNotIn("git -C .pages-repo add data/search-index.json", workflow)
-        self.assertNotIn("rm -rf .pages-repo/data/runs", workflow)
+        self.assertNotIn("git -C .pages-repo add data/catalog", workflow)
+        self.assertNotIn("git -C .pages-repo add data/runs", workflow)
 
     def test_pages_workflows_publish_parquet_data_by_default(self) -> None:
         nightly = (ROOT / ".github" / "workflows" / "nightly.yml").read_text(encoding="utf-8")
