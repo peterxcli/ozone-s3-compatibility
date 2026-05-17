@@ -269,6 +269,28 @@ function featureSummaryFromRow(row: ParquetFeatureRow): FeatureSummaryRecord {
   };
 }
 
+function compareText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function compareFeatureRowsByImpact(left: ParquetFeatureRow, right: ParquetFeatureRow): number {
+  const eligibleDelta = asNumber(right.eligible) - asNumber(left.eligible);
+  if (eligibleDelta !== 0) {
+    return eligibleDelta;
+  }
+
+  const leftRate = asNullableRate(left.compatibility_rate) ?? -1;
+  const rightRate = asNullableRate(right.compatibility_rate) ?? -1;
+  const rateDelta = leftRate - rightRate;
+  if (rateDelta !== 0) {
+    return rateDelta;
+  }
+
+  return compareText(asString(left.name), asString(right.name));
+}
+
 function caseFeatures(value: unknown): string[] {
   let entries: unknown[] | null = null;
   if (Array.isArray(value)) {
@@ -336,7 +358,7 @@ function suiteFromRows(
     label: asString(suiteRow.label || suiteRow.suite_key),
     status: asString(suiteRow.status || "unknown"),
     summary: summaryFromRow(suiteRow),
-    feature_summaries: featureRows.map(featureSummaryFromRow),
+    feature_summaries: [...featureRows].sort(compareFeatureRowsByImpact).map(featureSummaryFromRow),
   };
   const includedCaseStrategy = asOptionalString(suiteRow.included_case_strategy);
   if (includedCaseStrategy) {

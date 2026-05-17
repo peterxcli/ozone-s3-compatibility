@@ -234,6 +234,24 @@ test("normalizes Parquet catalog, suite, and feature rows to the existing index 
   assert.equal(index.charts.features.s3_tests.policy[1].rate, 0.5);
 });
 
+test("normalizes Parquet feature summaries by impact instead of scan order", () => {
+  const index = normalizeParquetIndex({
+    catalogRows: [catalogRow("run-new", "2026-05-17T02:15:00.000Z")],
+    suiteRows: [suiteRow("run-new", "s3_tests", "s3-tests", 0.5, 10, 20)],
+    featureRows: [
+      featureRow("run-new", "s3_tests", "abac_test", 0, 0, 2),
+      featureRow("run-new", "s3_tests", "bucket_policy", 0, 0, 8),
+      featureRow("run-new", "s3_tests", "copy", 0.5, 4, 4),
+      featureRow("run-new", "s3_tests", "s3", 0.25, 5, 15),
+    ],
+  });
+
+  assert.deepEqual(
+    index.runs[0].suites.s3_tests.feature_summaries.map((feature) => feature.name),
+    ["s3", "bucket_policy", "copy", "abac_test"],
+  );
+});
+
 test("normalizes Parquet run detail rows to the existing full-run shape", () => {
   const summary = normalizeParquetIndex({
     catalogRows: [catalogRow("run-new", "2026-05-17T02:15:00.000Z")],
