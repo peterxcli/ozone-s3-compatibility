@@ -376,6 +376,68 @@ code,
   font-weight: 800;
 }
 
+.run-log-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(248, 251, 255, 0.74);
+}
+
+.run-log-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.run-log-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.run-log-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.6rem;
+}
+
+.run-log-button {
+  appearance: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.55rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.run-log-button:hover,
+.run-log-button:focus-visible {
+  border-color: rgba(13, 127, 171, 0.32);
+  box-shadow: 0 8px 18px rgba(16, 45, 76, 0.1);
+}
+
+.run-log-source {
+  font-weight: 800;
+}
+
+.run-log-path {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
 .feature-rollup-chip {
   display: inline-flex;
   align-items: center;
@@ -1348,6 +1410,15 @@ th {
   max-height: 15rem;
   padding: 0.85rem;
   white-space: pre-wrap;
+}
+
+.log-modal {
+  width: min(1120px, 100%);
+}
+
+.log-detail-text {
+  max-height: min(65vh, 40rem);
+  white-space: pre;
 }
 
 .case-code-head {

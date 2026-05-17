@@ -18,6 +18,7 @@ import type {
   FeatureComparisonSummary,
   FullRun,
   HistoryTogglePayload,
+  LogFileRecord,
   OrderedSuiteEntry,
   RunLike,
   RunSummary,
@@ -52,6 +53,7 @@ const emit = defineEmits<{
   toggle: [payload: HistoryTogglePayload];
   retry: [summary: RunSummary];
   "open-case": [result: SearchResult];
+  "open-log": [summary: RunSummary, logFile: LogFileRecord];
 }>();
 
 const anchorId = computed(() => archivedRunAnchorId(props.summary, props.runIndex));
@@ -84,6 +86,10 @@ function retry(): void {
 
 function openCase(result: SearchResult): void {
   emit("open-case", result);
+}
+
+function openLog(logFile: LogFileRecord): void {
+  emit("open-log", props.summary, logFile);
 }
 </script>
 
@@ -134,9 +140,10 @@ function openCase(result: SearchResult): void {
         :run-file="summary.file"
         :previous-run="previousRun"
         :suite-order="suiteOrder"
-        :default-suite-open="false"
+        :default-suite-open="true"
         :is-latest-run="false"
         @open-case="openCase"
+        @open-log="openLog"
       />
       <div v-else class="loader history-detail-state">Open this run to load its full detail.</div>
     </div>

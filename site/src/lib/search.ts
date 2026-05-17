@@ -1,8 +1,12 @@
 import { Index, IndexedDB } from "flexsearch";
 import type { Id } from "flexsearch";
+import type { IndexPayload, RunSummary } from "./types";
+
+const PARQUET_SEARCH_QUERY_CONCURRENCY = 6;
 
 export interface SearchIndexRow {
   id: number;
+  caseId?: string;
   suiteKey: string;
   suiteLabel: string;
   testName: string;
@@ -51,8 +55,31 @@ export interface SearchIndexRowsShard {
 
 export type SearchIndexBootstrapPayload = SearchIndexPayload | PartitionedSearchIndexManifest;
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    }),
+  );
+
+  return results;
+}
+
 export interface SearchResult {
   id: string;
+  caseId?: string;
   suiteKey: string;
   suiteLabel: string;
   testName: string;
@@ -108,6 +135,46 @@ export interface SearchSession {
   search: (query: string, suiteFilter?: string, limit?: number, options?: SearchOptions) => Promise<SearchResult[]>;
 }
 
+export interface SearchParquetQueryClient {
+  queryRows<T extends Record<string, unknown>>(filePath: string, sql: string): Promise<T[]>;
+}
+
+export interface ParquetSearchRow extends Record<string, unknown> {
+  run_id?: unknown;
+  suite_key?: unknown;
+  case_id?: unknown;
+  status?: unknown;
+  features?: unknown;
+  test_name?: unknown;
+  classname?: unknown;
+  message?: unknown;
+  detail_preview?: unknown;
+  source_path?: unknown;
+  source_symbol?: unknown;
+  search_text?: unknown;
+}
+
+export interface NormalizeParquetSearchInput {
+  generated_at?: string;
+  runs: RunSummary[];
+  rowsByRunId: Record<string, ParquetSearchRow[]>;
+}
+
+interface ParquetCaseDetailRow extends Record<string, unknown> {
+  case_id?: unknown;
+  name?: unknown;
+  classname?: unknown;
+  status?: unknown;
+  duration_ms?: unknown;
+  features?: unknown;
+  message?: unknown;
+  detail?: unknown;
+  source_repo?: unknown;
+  source_ref?: unknown;
+  source_path?: unknown;
+  source_symbol?: unknown;
+}
+
 interface SearchToken {
   text: string;
   compact: string;
@@ -141,6 +208,7 @@ type SearchIndex = {
 
 const SEARCH_DB_NAME = "ozone-s3-compatibility-search";
 const SEARCH_STORAGE_KEY = "ozone-s3-compatibility-search-index-id";
+const PARQUET_FILE_REF = "__PARQUET_FILE__";
 const FIELD_ORDER = ["test name", "error message", "suite", "run", "source", "class", "feature", "status"];
 const FIELD_WEIGHTS: Record<string, number> = {
   "test name": 80,
@@ -166,6 +234,76 @@ async function fetchSearchJson<T>(path: string, errorMessage: string): Promise<T
     throw new Error(errorMessage);
   }
   return (await response.json()) as T;
+}
+
+function asString(value: unknown): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function asStringArray(value: unknown): string[] {
+  let entries: unknown[] | null = null;
+  if (Array.isArray(value)) {
+    entries = value;
+  } else if (value && typeof value === "object" && "toArray" in value && typeof value.toArray === "function") {
+    entries = (value.toArray as () => unknown[])();
+  } else if (value && typeof value === "object" && Symbol.iterator in value) {
+    entries = Array.from(value as Iterable<unknown>);
+  }
+
+  if (!entries) {
+    return [];
+  }
+  return entries.map((entry) => asString(entry)).filter(Boolean);
+}
+
+function sqlString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function suiteFileStem(suiteKey: string): string {
+  return suiteKey.replace(/_/g, "-");
+}
+
+function parquetDetailPath(summary: Pick<RunSummary, "file" | "parquet_detail_base_url">, relativePath: string): string {
+  const basePath = (summary.parquet_detail_base_url || summary.file.replace(/\.json$/, "/")).replace(/\/?$/, "/");
+  return `${basePath}${relativePath}`;
+}
+
+function runIdForSummary(summary: Pick<RunSummary, "id" | "run_id">): string {
+  return asString(summary.run_id || summary.id);
+}
+
+function sourceRef(summary: RunSummary, suiteKey: string): string {
+  const source = summary.sources?.[suiteKey];
+  const commit = asString(source?.commit);
+  if (commit && commit !== "unknown") {
+    return commit;
+  }
+  return asString(source?.ref);
+}
+
+function sourceRepo(summary: RunSummary, suiteKey: string): string {
+  return asString(summary.sources?.[suiteKey]?.repo);
+}
+
+function sourceLanguage(suiteKey: string): string {
+  if (suiteKey === "s3_tests") {
+    return "python";
+  }
+  return suiteKey === "mint" ? "shell" : "text";
+}
+
+function fallbackSourceSnippet(suiteKey: string, suiteLabel: string, testName: string, classname: string): string {
+  if (suiteKey === "mint") {
+    return [
+      "# Mint test case",
+      classname ? `target=${classname}` : "",
+      testName ? `function=${testName}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return `# ${suiteLabel} test case\n${testName}`.trim();
 }
 
 function isPartitionedSearchIndexPayload(
@@ -212,6 +350,129 @@ export async function fetchSearchIndexPayload(indexPath: string): Promise<Search
     row_count: payload.row_count || rows.length,
     rows,
   };
+}
+
+function parquetSearchSql(orderBy = ""): string {
+  const orderClause = orderBy ? ` ORDER BY ${orderBy}` : "";
+  return `SELECT * FROM read_parquet(${PARQUET_FILE_REF})${orderClause}`;
+}
+
+function caseDetailSql(caseId: string): string {
+  return `SELECT * FROM read_parquet(${PARQUET_FILE_REF}) WHERE case_id = ${sqlString(caseId)} LIMIT 1`;
+}
+
+function parquetSearchText(row: SearchIndexRow, parquetSearchTextValue: unknown): string {
+  return [
+    asString(parquetSearchTextValue),
+    row.suiteLabel,
+    row.runId,
+    row.runStartedAt,
+    row.runFinishedAt,
+    row.runFile,
+    row.sourcePath,
+    row.sourceSymbol,
+    row.sourceRepo,
+    row.sourceRef,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function normalizeParquetSearchRow(
+  row: ParquetSearchRow,
+  summary: RunSummary,
+  runOrdinal: number,
+  rowId: number,
+): SearchIndexRow {
+  const runId = asString(row.run_id || runIdForSummary(summary));
+  const suiteKey = asString(row.suite_key);
+  const suiteLabel = asString(summary.suites?.[suiteKey]?.label || suiteKey.replace(/_/g, "-"));
+  const testName = asString(row.test_name);
+  const classname = asString(row.classname);
+  const normalized: SearchIndexRow = {
+    id: rowId,
+    caseId: asString(row.case_id) || undefined,
+    suiteKey,
+    suiteLabel,
+    testName,
+    classname,
+    status: asString(row.status || "unknown"),
+    features: asStringArray(row.features),
+    message: asString(row.message),
+    detail: asString(row.detail_preview),
+    runId,
+    runStartedAt: asString(summary.started_at),
+    runFinishedAt: asString(summary.finished_at || summary.started_at),
+    runFile: asString(summary.file || `data/runs/${runId}.json`),
+    isLatestRun: runOrdinal === 0,
+    runOrdinal,
+    sourceLanguage: sourceLanguage(suiteKey),
+    sourcePath: asString(row.source_path),
+    sourceSymbol: asString(row.source_symbol),
+    sourceRef: sourceRef(summary, suiteKey),
+    sourceRepo: sourceRepo(summary, suiteKey),
+    sourceSnippet: suiteKey === "s3_tests" ? "" : fallbackSourceSnippet(suiteKey, suiteLabel, testName, classname),
+    searchText: "",
+  };
+  normalized.searchText = parquetSearchText(normalized, row.search_text);
+  return normalized;
+}
+
+export function normalizeParquetSearchIndex(input: NormalizeParquetSearchInput): SearchIndexPayload {
+  const rows: SearchIndexRow[] = [];
+  input.runs.forEach((summary, runOrdinal) => {
+    const runId = runIdForSummary(summary);
+    (input.rowsByRunId[runId] || []).forEach((row) => {
+      rows.push(normalizeParquetSearchRow(row, summary, runOrdinal, rows.length + 1));
+    });
+  });
+
+  const generatedAt =
+    input.generated_at ||
+    asString(input.runs[0]?.finished_at || input.runs[0]?.started_at);
+  const digest = digestParts(
+    rows.map((row) =>
+      [
+        row.runId,
+        row.suiteKey,
+        row.caseId || "",
+        row.status,
+        row.message,
+        row.detail,
+        row.searchText,
+      ].join("\0")
+    )
+  );
+
+  return {
+    schema_version: 1,
+    generated_at: generatedAt,
+    index_id: `parquet-search-${generatedAt}-${rows.length}-${digest}`,
+    row_count: rows.length,
+    rows,
+  };
+}
+
+export async function fetchParquetSearchIndexPayload(
+  index: IndexPayload,
+  client: SearchParquetQueryClient,
+): Promise<SearchIndexPayload> {
+  const rowSets = await mapWithConcurrency(index.runs, PARQUET_SEARCH_QUERY_CONCURRENCY, (summary) =>
+    client.queryRows<ParquetSearchRow>(
+      parquetDetailPath(summary, "search-rows.parquet"),
+      parquetSearchSql("suite_key, classname, test_name"),
+    ),
+  );
+  const rowsByRunId: Record<string, ParquetSearchRow[]> = {};
+  index.runs.forEach((summary, index) => {
+    rowsByRunId[runIdForSummary(summary)] = rowSets[index] || [];
+  });
+
+  return normalizeParquetSearchIndex({
+    generated_at: index.generated_at,
+    runs: index.runs,
+    rowsByRunId,
+  });
 }
 
 function normalizeText(value: string | null | undefined): string {
@@ -341,6 +602,7 @@ function searchResultForRow(row: SearchIndexRow, tokens: SearchToken[], flexRank
   const fields = rowFields(row);
   return {
     id: String(row.id),
+    caseId: row.caseId,
     suiteKey: row.suiteKey,
     suiteLabel: row.suiteLabel,
     testName: row.testName,
@@ -364,6 +626,69 @@ function searchResultForRow(row: SearchIndexRow, tokens: SearchToken[], flexRank
     score: scoreMatch(fields, tokens),
     runOrdinal: row.runOrdinal,
     flexRank,
+  };
+}
+
+function summaryForSearchResult(
+  result: Pick<SearchResult, "runId" | "runFile">,
+  index: Pick<IndexPayload, "runs">,
+): RunSummary | null {
+  return index.runs.find((summary) => runIdForSummary(summary) === result.runId || summary.file === result.runFile) || null;
+}
+
+function hydratedSourceSnippet(result: SearchResult, row: ParquetCaseDetailRow): string {
+  if (result.suiteKey === "s3_tests") {
+    return "";
+  }
+  return (
+    result.sourceSnippet ||
+    fallbackSourceSnippet(
+      result.suiteKey,
+      result.suiteLabel,
+      asString(row.name || result.testName),
+      asString(row.classname || result.classname),
+    )
+  );
+}
+
+export async function hydrateParquetSearchResultDetail(
+  result: SearchResult,
+  index: Pick<IndexPayload, "runs">,
+  client: SearchParquetQueryClient,
+): Promise<SearchResult> {
+  const caseId = asString(result.caseId);
+  if (!caseId) {
+    return result;
+  }
+
+  const summary = summaryForSearchResult(result, index);
+  if (!summary) {
+    return result;
+  }
+
+  const rows = await client.queryRows<ParquetCaseDetailRow>(
+    parquetDetailPath(summary, `cases-${suiteFileStem(result.suiteKey)}.parquet`),
+    caseDetailSql(caseId),
+  );
+  const row = rows[0];
+  if (!row) {
+    return result;
+  }
+
+  return {
+    ...result,
+    testName: asString(row.name || result.testName),
+    classname: asString(row.classname || result.classname),
+    status: asString(row.status || result.status || "unknown"),
+    features: asStringArray(row.features).length ? asStringArray(row.features) : result.features,
+    message: asString(row.message || result.message),
+    detail: asString(row.detail || result.detail),
+    sourceRepo: asString(row.source_repo || result.sourceRepo),
+    sourceRef: asString(row.source_ref || result.sourceRef),
+    sourcePath: asString(row.source_path || result.sourcePath),
+    sourceSymbol: asString(row.source_symbol || result.sourceSymbol),
+    sourceLanguage: result.sourceLanguage || sourceLanguage(result.suiteKey),
+    sourceSnippet: hydratedSourceSnippet(result, row),
   };
 }
 

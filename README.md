@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/bf2decf9-bb98-48da-bcbf-e2a2951806f9
 - `scripts/run-nightly.sh`: local orchestration entrypoint.
 - `scripts/nightly/`: clone, build, cluster, test, and normalization steps.
 - `scripts/normalize_run.py`: converts raw `s3-tests` and Mint output into run JSON.
-- `scripts/build_pages.py`: builds `data/index.json`, `data/search-index.json`, social preview assets, and static Pages output.
+- `scripts/build_pages.py`: builds Parquet report data, social preview assets, and static Pages output.
 - `scripts/compare_runs.py`: writes PR-vs-main comparison markdown.
 - `site/`: Vue 3 + Vite report frontend.
 - `.github/act/`: local `act` runner image and sample event.
@@ -38,6 +38,12 @@ Install frontend dependencies:
 
 ```bash
 npm --prefix site ci
+```
+
+Install Python report data dependencies:
+
+```bash
+uv sync
 ```
 
 Run frontend checks:
@@ -58,11 +64,15 @@ export MINT_TARGETS='healthcheck awscli'
 export OUTPUT_ROOT="$PWD/out/run"
 
 bash scripts/run-nightly.sh
-npm --prefix site run build
-python3 scripts/build_pages.py --output-dir out/pages --new-run out/run/run.json
+VITE_REPORT_DATA_FORMAT=parquet npm --prefix site run build
+uv run python scripts/build_pages.py --output-dir out/pages --new-run out/run/run.json --data-format parquet
 ```
 
 Serve `out/pages` with any static file server.
+
+## Report Data
+
+Published Pages data is Parquet by default. The app loads `data/catalog/runs.parquet` first, then fetches per-run Parquet files for suites, cases, search rows, and logs on demand through DuckDB-Wasm. The default workflows host those Parquet files on the same `gh-pages` site as the static UI. For non-Git hosting, build the frontend with `VITE_REPORT_DATA_BASE_URL=https://.../data/` or open the report with `?dataBaseUrl=https://.../data/`; remote hosts must allow browser CORS reads.
 
 ## Local Workflow Run
 

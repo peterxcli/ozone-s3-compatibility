@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from normalize_run import normalize_mint_suite, normalize_s3_suite, overall_status
+from parquet_run import read_run_dataset, write_pages_parquet_dataset
 
 DEFAULT_S3_TESTS_ARGS = "s3tests/functional"
 INDEX_RUN_CHUNK_SIZE = 10
@@ -25,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--new-run", required=True)
     parser.add_argument("--existing-runs-dir", default="")
+    parser.add_argument("--data-format", choices=["both", "parquet"], default="both")
     return parser.parse_args()
 
 
@@ -188,8 +190,19 @@ def load_or_recover_run(path: Path) -> dict[str, Any]:
         direct_run = path / "run.json"
         if direct_run.exists():
             return load_json(direct_run)
+        if (path / "metadata.parquet").exists():
+            return read_run_dataset(path)
         return recover_run_from_artifact(path)
     raise FileNotFoundError(path)
+
+
+def raw_root_for_run_path(path: Path) -> Path | None:
+    if not path.is_dir():
+        return None
+    raw_path = path / "raw"
+    if raw_path.is_dir():
+        return raw_path
+    return path
 
 
 def summarize_run(run: dict[str, Any], file_name: str) -> dict[str, Any]:
@@ -717,6 +730,53 @@ def copy_tree(source: Path, target: Path) -> None:
         shutil.copy2(file_path, destination)
 
 
+def load_existing_runs(existing_runs_dir: Path | None, output_runs_dir: Path) -> list[dict[str, Any]]:
+    if not existing_runs_dir or not existing_runs_dir.exists():
+        return []
+
+    runs: list[dict[str, Any]] = []
+    seen_run_ids: set[str] = set()
+
+    for run_file in sorted(existing_runs_dir.glob("*.json")):
+        run = load_json(run_file)
+        run_id = string_field(run.get("run_id") or run.get("id"))
+        if not run_id or run_id in seen_run_ids:
+            continue
+        shutil.copy2(run_file, output_runs_dir / run_file.name)
+        runs.append(run)
+        seen_run_ids.add(run_id)
+
+    for run_dir in sorted(path for path in existing_runs_dir.iterdir() if path.is_dir()):
+        if not (run_dir / "metadata.parquet").exists():
+            continue
+        run = read_run_dataset(run_dir)
+        run_id = string_field(run.get("run_id") or run.get("id"))
+        if not run_id or run_id in seen_run_ids:
+            continue
+        copy_tree(run_dir, output_runs_dir / run_dir.name)
+        runs.append(run)
+        seen_run_ids.add(run_id)
+
+    return runs
+
+
+def remove_json_report_data(data_dir: Path) -> None:
+    for path in [
+        data_dir / "index.json",
+        data_dir / "search-index.json",
+    ]:
+        if path.exists():
+            path.unlink()
+    for path in [
+        data_dir / "index",
+        data_dir / "search",
+    ]:
+        if path.exists():
+            shutil.rmtree(path)
+    for run_file in (data_dir / "runs").glob("*.json"):
+        run_file.unlink()
+
+
 def built_site_dir() -> Path:
     site_dist = Path(__file__).resolve().parent.parent / "site" / "dist"
     if site_dist.is_dir():
@@ -737,18 +797,26 @@ def main() -> None:
         shutil.rmtree(output_dir)
     (output_dir / "data" / "runs").mkdir(parents=True, exist_ok=True)
 
-    if existing_runs_dir and existing_runs_dir.exists():
-        for run_file in sorted(existing_runs_dir.glob("*.json")):
-            shutil.copy2(run_file, output_dir / "data" / "runs" / run_file.name)
+    data_dir = output_dir / "data"
+    runs_dir = data_dir / "runs"
+    existing_runs = load_existing_runs(existing_runs_dir, runs_dir)
 
     new_run = load_or_recover_run(new_run_path)
-    current_run_file = output_dir / "data" / "runs" / f"{new_run['run_id']}.json"
-    current_run_file.write_text(json.dumps(new_run, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+    if args.data_format == "both":
+        current_run_file = runs_dir / f"{new_run['run_id']}.json"
+        current_run_file.write_text(json.dumps(new_run, indent=2, sort_keys=False) + "\n", encoding="utf-8")
 
-    runs = [load_json(path) for path in sorted((output_dir / "data" / "runs").glob("*.json"))]
+    runs_by_id = {string_field(run.get("run_id") or run.get("id")): run for run in existing_runs}
+    runs_by_id[string_field(new_run.get("run_id") or new_run.get("id"))] = new_run
+    runs = sorted(runs_by_id.values(), key=lambda run: string_field(run.get("started_at")))
     index_payload = build_index(runs)
-    write_partitioned_index(index_payload, output_dir / "data")
-    write_partitioned_search_index(build_search_index(runs), output_dir / "data")
+    write_partitioned_index(index_payload, data_dir)
+    write_partitioned_search_index(build_search_index(runs), data_dir)
+    raw_root = raw_root_for_run_path(new_run_path)
+    raw_roots = {new_run["run_id"]: raw_root} if raw_root else {}
+    write_pages_parquet_dataset(runs, data_dir, raw_roots)
+    if args.data_format == "parquet":
+        remove_json_report_data(data_dir)
 
     copy_tree(site_dir, output_dir)
     write_social_preview(index_payload, output_dir / "social-preview.svg")

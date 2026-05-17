@@ -31,11 +31,22 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install Pages data dependencies
+        run: uv sync --locked
+
       - name: Build Pages frontend
         run: |
           set -euo pipefail
           npm --prefix site ci
-          npm --prefix site run build
+          VITE_REPORT_DATA_FORMAT=parquet npm --prefix site run build
 
       - name: Prepare gh-pages checkout
         env:
@@ -56,12 +67,17 @@ jobs:
         run: |
           set -euo pipefail
           source_dir="site/dist"
-          if [ -d .pages-repo/data/runs ] && find .pages-repo/data/runs -maxdepth 1 -name '*.json' | grep -q .; then
-            latest_run="$(find .pages-repo/data/runs -maxdepth 1 -name '*.json' | sort | tail -n 1)"
-            python3 scripts/build_pages.py \
+          if [ -d .pages-repo/data/runs ] && find .pages-repo/data/runs \( -name '*.json' -o -name metadata.parquet \) | grep -q .; then
+            if find .pages-repo/data/runs -maxdepth 1 -name '*.json' | grep -q .; then
+              latest_run="$(find .pages-repo/data/runs -maxdepth 1 -name '*.json' | sort | tail -n 1)"
+            else
+              latest_run="$(dirname "$(find .pages-repo/data/runs -mindepth 2 -maxdepth 2 -name metadata.parquet | sort | tail -n 1)")"
+            fi
+            uv run python scripts/build_pages.py \
               --output-dir out/pages-ui-refresh \
               --new-run "${latest_run}" \
-              --existing-runs-dir .pages-repo/data/runs
+              --existing-runs-dir .pages-repo/data/runs \
+              --data-format parquet
             source_dir="out/pages-ui-refresh"
           fi
 
@@ -71,13 +87,22 @@ jobs:
           cp "${source_dir}/social-preview.svg" .pages-repo/social-preview.svg
           cp "${source_dir}/social-preview.png" .pages-repo/social-preview.png
           cp "${source_dir}/CNAME" .pages-repo/CNAME
-          if [ -f "${source_dir}/data/search-index.json" ]; then
-            mkdir -p .pages-repo/data
-            cp "${source_dir}/data/search-index.json" .pages-repo/data/search-index.json
-            if [ -d "${source_dir}/data/search" ]; then
-              rm -rf .pages-repo/data/search
-              cp -R "${source_dir}/data/search" .pages-repo/data/search
+          if [ -d "${source_dir}/data" ]; then
+            rm -f .pages-repo/data/index.json .pages-repo/data/search-index.json
+            rm -rf .pages-repo/data/index .pages-repo/data/search
+            if [ -d .pages-repo/data/runs ]; then
+              find .pages-repo/data/runs -maxdepth 1 -name '*.json' -delete
             fi
+          fi
+          if [ -d "${source_dir}/data/catalog" ]; then
+            mkdir -p .pages-repo/data
+            rm -rf .pages-repo/data/catalog
+            cp -R "${source_dir}/data/catalog" .pages-repo/data/catalog
+          fi
+          if [ -d "${source_dir}/data/runs" ]; then
+            mkdir -p .pages-repo/data
+            mkdir -p .pages-repo/data/runs
+            cp -R "${source_dir}/data/runs/." .pages-repo/data/runs
           fi
           touch .pages-repo/.nojekyll
 
@@ -88,11 +113,11 @@ jobs:
           git -C .pages-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C .pages-repo add index.html app.js styles.css social-preview.svg social-preview.png .nojekyll
           git -C .pages-repo add CNAME
-          if [ -f .pages-repo/data/search-index.json ]; then
-            git -C .pages-repo add data/search-index.json
+          if [ -d .pages-repo/data/catalog ]; then
+            git -C .pages-repo add data/catalog
           fi
-          if [ -d .pages-repo/data/search ]; then
-            git -C .pages-repo add data/search
+          if [ -d .pages-repo/data/runs ]; then
+            git -C .pages-repo add data/runs
           fi
           if git -C .pages-repo diff --cached --quiet; then
             echo "No UI changes to publish"

@@ -20,6 +20,11 @@ import type {
   StoredCaseEntry,
   SuiteRecord,
 } from "./types";
+import {
+  fetchParquetIndexPayload,
+  fetchParquetRunPayload,
+  type ParquetQueryClient,
+} from "./parquetReport";
 
 export const COLORS = ["#0d7fab", "#ff8a3d", "#0f9d71", "#7a62ff", "#d2493a", "#0097a7", "#9c6b00", "#d81b60"];
 export const DEFAULT_S3_TESTS_ARGS = "s3tests/functional";
@@ -31,12 +36,23 @@ export function chartLabels(points: Array<Pick<OverallChartPoint, "started_at">>
   return points.map((point) => point.started_at);
 }
 
+function fallbackDateLabel(value: string): string {
+  return value || "Unknown date";
+}
+
+function parseDisplayDate(value: string): Date | null {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function chartLabel(value: string): string {
+  const date = parseDisplayDate(value);
+  if (!date) return fallbackDateLabel(value);
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function formatPercent(rate: number | null | undefined): string {
@@ -50,7 +66,8 @@ export function formatRateDelta(delta: number | null | undefined): string {
 }
 
 export function formatDate(value: string): string {
-  const date = new Date(value);
+  const date = parseDisplayDate(value);
+  if (!date) return fallbackDateLabel(value);
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
     month: "short",
@@ -413,6 +430,39 @@ export async function fetchIndex(indexPath: string): Promise<IndexPayload> {
 
 export async function fetchRun(file: string): Promise<FullRun> {
   return fetchJson<FullRun>(file, `Failed to fetch ${file}`);
+}
+
+export interface ReportDataFetchOptions {
+  parquet?: boolean;
+  parquetClient?: ParquetQueryClient | null;
+}
+
+export async function fetchReportIndex(
+  indexPath: string,
+  options: ReportDataFetchOptions = {},
+): Promise<IndexPayload> {
+  if (options.parquet && options.parquetClient) {
+    try {
+      return await fetchParquetIndexPayload(indexPath, options.parquetClient);
+    } catch {
+      return fetchIndex(indexPath);
+    }
+  }
+  return fetchIndex(indexPath);
+}
+
+export async function fetchReportRun(
+  summary: RunSummary,
+  options: ReportDataFetchOptions = {},
+): Promise<FullRun> {
+  if (options.parquet && options.parquetClient && summary.parquet_detail_base_url) {
+    try {
+      return await fetchParquetRunPayload(summary, options.parquetClient);
+    } catch {
+      return fetchRun(summary.file);
+    }
+  }
+  return fetchRun(summary.file);
 }
 
 export function scrollElementIntoView(element: Element): void {

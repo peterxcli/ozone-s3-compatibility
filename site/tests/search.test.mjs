@@ -39,9 +39,14 @@ execFileSync(
 writeFileSync(path.join(outDir, "package.json"), '{"type":"commonjs"}\n', "utf8");
 symlinkSync(path.join(siteRoot, "node_modules"), path.join(outDir, "node_modules"), "junction");
 
-const { createInMemorySearchSession, createPersistentSearchSession, fetchSearchIndexPayload } = require(
-  path.join(outDir, "search.js")
-);
+const {
+  createInMemorySearchSession,
+  createPersistentSearchSession,
+  fetchParquetSearchIndexPayload,
+  fetchSearchIndexPayload,
+  hydrateParquetSearchResultDetail,
+  normalizeParquetSearchIndex,
+} = require(path.join(outDir, "search.js"));
 
 const searchPayload = {
   schema_version: 1,
@@ -389,6 +394,253 @@ test("loads partitioned search index shards and reconstructs the legacy payload 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("limits concurrent Parquet search row queries while loading archived runs", async () => {
+  let activeQueries = 0;
+  let maxActiveQueries = 0;
+  const runIds = Array.from({ length: 12 }, (_, index) => `run-${String(index).padStart(2, "0")}`);
+  const indexPayload = {
+    generated_at: "2026-05-17T02:15:00.000Z",
+    runs: runIds.map((runId, runOrdinal) => ({
+      id: runId,
+      run_id: runId,
+      started_at: `2026-05-${String(17 - runOrdinal).padStart(2, "0")}T02:15:00.000Z`,
+      finished_at: `2026-05-${String(17 - runOrdinal).padStart(2, "0")}T02:35:00.000Z`,
+      file: `data/runs/${runId}.json`,
+      parquet_detail_base_url: `data/runs/${runId}/`,
+      sources: {},
+      suites: {
+        s3_tests: {
+          label: "s3-tests",
+        },
+      },
+    })),
+  };
+  const client = {
+    async queryRows(filePath) {
+      activeQueries += 1;
+      maxActiveQueries = Math.max(maxActiveQueries, activeQueries);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeQueries -= 1;
+
+      const runId = filePath.split("/runs/")[1]?.split("/")[0] || "unknown";
+      return [
+        {
+          run_id: runId,
+          suite_key: "s3_tests",
+          case_id: `s3_tests:${runId}`,
+          status: "fail",
+          features: { toArray: () => ["policy"] },
+          test_name: `test_${runId}`,
+          classname: "s3tests.functional.test_s3",
+          message: "AccessDenied",
+          detail_preview: "short preview",
+          source_path: "s3tests/functional/test_s3.py",
+          source_symbol: `test_${runId}`,
+          search_text: "AccessDenied policy",
+        },
+      ];
+    },
+  };
+
+  const payload = await fetchParquetSearchIndexPayload(indexPayload, client);
+
+  assert.equal(payload.row_count, 12);
+  assert.ok(maxActiveQueries <= 6, `expected at most 6 active search queries, saw ${maxActiveQueries}`);
+});
+
+test("normalizes Parquet search rows into the existing search payload shape", () => {
+  const payload = normalizeParquetSearchIndex({
+    generated_at: "2026-05-18T01:15:00.000Z",
+    runs: [
+      {
+        id: "run-new",
+        run_id: "run-new",
+        started_at: "2026-05-18T01:00:00.000Z",
+        finished_at: "2026-05-18T01:15:00.000Z",
+        file: "data/runs/run-new.json",
+        parquet_detail_base_url: "data/runs/run-new/",
+        sources: {
+          s3_tests: {
+            repo: "https://github.com/ceph/s3-tests.git",
+            ref: "main",
+            commit: "abc123456789",
+            short_commit: "abc123456789",
+          },
+        },
+        suites: {
+          s3_tests: {
+            label: "s3-tests",
+          },
+        },
+      },
+      {
+        id: "run-old",
+        run_id: "run-old",
+        started_at: "2026-05-17T01:00:00.000Z",
+        finished_at: "2026-05-17T01:15:00.000Z",
+        file: "data/runs/run-old.json",
+        parquet_detail_base_url: "data/runs/run-old/",
+        sources: {},
+        suites: {
+          mint: {
+            label: "mint",
+          },
+        },
+      },
+    ],
+    rowsByRunId: {
+      "run-new": [
+        {
+          run_id: "run-new",
+          suite_key: "s3_tests",
+          case_id: "s3_tests:test_bucket_policy_access_denied",
+          status: "fail",
+          features: ["policy"],
+          test_name: "test_bucket_policy_access_denied",
+          classname: "s3tests.functional.test_s3",
+          message: "AccessDenied",
+          detail_preview: "short preview",
+          source_path: "s3tests/functional/test_s3.py",
+          source_symbol: "test_bucket_policy_access_denied",
+          search_text: "AccessDenied policy",
+        },
+      ],
+      "run-old": [
+        {
+          run_id: "run-old",
+          suite_key: "mint",
+          case_id: "mint:awscli_bucket_list",
+          status: "pass",
+          features: { toArray: () => ["bucket"] },
+          test_name: "awscli_bucket_list",
+          classname: "awscli",
+          message: "",
+          detail_preview: "",
+          source_path: "",
+          source_symbol: "awscli_bucket_list",
+          search_text: "awscli bucket",
+        },
+      ],
+    },
+  });
+
+  assert.equal(payload.schema_version, 1);
+  assert.equal(payload.generated_at, "2026-05-18T01:15:00.000Z");
+  assert.equal(payload.row_count, 2);
+  assert.match(payload.index_id, /^parquet-search-/);
+  assert.deepEqual(
+    payload.rows.map((row) => ({
+      id: row.id,
+      caseId: row.caseId,
+      suiteLabel: row.suiteLabel,
+      runId: row.runId,
+      isLatestRun: row.isLatestRun,
+      runOrdinal: row.runOrdinal,
+      detail: row.detail,
+      sourceLanguage: row.sourceLanguage,
+      sourceRef: row.sourceRef,
+      features: row.features,
+    })),
+    [
+      {
+        id: 1,
+        caseId: "s3_tests:test_bucket_policy_access_denied",
+        suiteLabel: "s3-tests",
+        runId: "run-new",
+        isLatestRun: true,
+        runOrdinal: 0,
+        detail: "short preview",
+        sourceLanguage: "python",
+        sourceRef: "abc123456789",
+        features: ["policy"],
+      },
+      {
+        id: 2,
+        caseId: "mint:awscli_bucket_list",
+        suiteLabel: "mint",
+        runId: "run-old",
+        isLatestRun: false,
+        runOrdinal: 1,
+        detail: "",
+        sourceLanguage: "shell",
+        sourceRef: "",
+        features: ["bucket"],
+      },
+    ]
+  );
+  assert.match(payload.rows[0].searchText, /s3-tests/);
+  assert.match(payload.rows[0].searchText, /run-new/);
+  assert.match(payload.rows[0].searchText, /AccessDenied policy/);
+});
+
+test("hydrates a Parquet search result with full case detail on demand", async () => {
+  const result = {
+    id: "1",
+    caseId: "s3_tests:test_bucket_policy_access_denied",
+    suiteKey: "s3_tests",
+    suiteLabel: "s3-tests",
+    testName: "test_bucket_policy_access_denied",
+    classname: "s3tests.functional.test_s3",
+    status: "fail",
+    features: ["policy"],
+    message: "AccessDenied",
+    detail: "short preview",
+    runId: "run-new",
+    runStartedAt: "2026-05-18T01:00:00.000Z",
+    runFinishedAt: "2026-05-18T01:15:00.000Z",
+    runFile: "data/runs/run-new.json",
+    isLatestRun: true,
+    matchedFields: [],
+    score: 1,
+  };
+  const index = {
+    runs: [
+      {
+        id: "run-new",
+        run_id: "run-new",
+        parquet_detail_base_url: "data/runs/run-new/",
+      },
+    ],
+  };
+  const queries = [];
+  const client = {
+    async queryRows(filePath, sql) {
+      queries.push({ filePath, sql });
+      return [
+        {
+          case_id: "s3_tests:test_bucket_policy_access_denied",
+          name: "test_bucket_policy_access_denied",
+          classname: "s3tests.functional.test_s3",
+          status: "fail",
+          duration_ms: 12,
+          features: { toArray: () => ["policy", "iam"] },
+          message: "AccessDenied full message",
+          detail: "full traceback from cases parquet",
+          source_repo: "https://github.com/ceph/s3-tests.git",
+          source_ref: "abc123456789",
+          source_path: "s3tests/functional/test_s3.py",
+          source_symbol: "test_bucket_policy_access_denied",
+        },
+      ];
+    },
+  };
+
+  const hydrated = await hydrateParquetSearchResultDetail(result, index, client);
+
+  assert.deepEqual(queries, [
+    {
+      filePath: "data/runs/run-new/cases-s3-tests.parquet",
+      sql:
+        "SELECT * FROM read_parquet(__PARQUET_FILE__) WHERE case_id = 's3_tests:test_bucket_policy_access_denied' LIMIT 1",
+    },
+  ]);
+  assert.equal(hydrated.detail, "full traceback from cases parquet");
+  assert.equal(hydrated.message, "AccessDenied full message");
+  assert.deepEqual(hydrated.features, ["policy", "iam"]);
+  assert.equal(hydrated.sourceRepo, "https://github.com/ceph/s3-tests.git");
+  assert.equal(hydrated.sourceRef, "abc123456789");
 });
 
 test("falls back to in-memory search when IndexedDB is unavailable", async () => {

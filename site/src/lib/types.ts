@@ -23,6 +23,32 @@ export interface StoredCaseEntry {
   detail?: string;
 }
 
+export interface LogFileRecord {
+  run_id: string;
+  log_source: string;
+  log_file: string;
+  path: string;
+  line_count: number;
+}
+
+export interface LogLineRecord {
+  run_id?: string;
+  log_source?: string;
+  log_file?: string;
+  line_number: number;
+  timestamp?: string;
+  level?: string;
+  case_id?: string;
+  component?: string;
+  thread?: string;
+  logger?: string;
+  message?: string;
+  raw_line: string;
+  event_id?: string;
+  exception_class?: string;
+  stacktrace_id?: string;
+}
+
 export type FeatureComparisonDirection = "improved" | "regressed" | "flat" | "unknown";
 
 export interface CaseStatusChange {
@@ -97,6 +123,7 @@ export interface RunSummary {
   workflow_run_url?: string;
   execution?: ExecutionInput | null;
   file: string;
+  parquet_detail_base_url?: string;
   sources: SourcesMap;
   suites: Record<string, SuiteRecord>;
 }
@@ -114,6 +141,7 @@ export interface FullRun {
   execution?: ExecutionInput | null;
   sources: SourcesMap;
   suites: Record<string, SuiteRecord>;
+  log_files?: LogFileRecord[];
 }
 
 export type RunLike = RunSummary | FullRun;

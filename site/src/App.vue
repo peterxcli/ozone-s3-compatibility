@@ -20,8 +20,8 @@ import {
 import {
   archivedRunAnchorId,
   deltaForSuite,
-  fetchIndex,
-  fetchRun,
+  fetchReportIndex,
+  fetchReportRun,
   formatDate,
   formatPercent,
   runScope,
@@ -30,18 +30,29 @@ import {
   summarizeFeatureComparisons,
   suiteLabel,
 } from "./lib/report";
-import { createPersistentSearchSession, fetchSearchIndexPayload } from "./lib/search";
+import { fetchParquetLogLines, isParquetReportEnabled } from "./lib/parquetReport";
+import {
+  createPersistentSearchSession,
+  fetchParquetSearchIndexPayload,
+  fetchSearchIndexPayload,
+  hydrateParquetSearchResultDetail,
+} from "./lib/search";
 import { highlightSearchMatch } from "./lib/searchHighlight";
 import type {
   FeatureComparisonSummary,
   FullRun,
   HistoryTogglePayload,
   IndexPayload,
+  LogFileRecord,
+  LogLineRecord,
   RunLike,
   RunSummary,
 } from "./lib/types";
+import type { ParquetQueryClient } from "./lib/parquetReport";
+import type { ReportDataFetchOptions } from "./lib/report";
 import type { SearchIndexLoadProgress, SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
 import type { SharedCaseIdentity } from "./lib/shareState";
+import type { ParquetCacheMode } from "./lib/duckdbParquetQueryClient";
 
 interface SummaryCard {
   key: string;
@@ -73,6 +84,11 @@ interface CaseSnippetState {
   startLine: number | null;
 }
 
+interface SelectedLogState {
+  summary: RunSummary;
+  logFile: LogFileRecord;
+}
+
 const SEARCH_RESULT_LIMIT = 120;
 
 function errorMessageOf(error: unknown): string {
@@ -98,6 +114,10 @@ const searchIndexProgress = ref<SearchIndexLoadProgress | null>(null);
 const searchError = ref<string>("");
 const selectedSearchResult = ref<SearchResult | null>(null);
 const selectedSearchResultOrigin = ref<"search" | "run-detail">("search");
+const selectedLog = ref<SelectedLogState | null>(null);
+const selectedLogLines = ref<LogLineRecord[]>([]);
+const selectedLogLoading = ref<boolean>(false);
+const selectedLogError = ref<string>("");
 const caseSnippet = reactive<CaseSnippetState>({
   loading: false,
   text: "",
@@ -108,11 +128,29 @@ const caseSnippet = reactive<CaseSnippetState>({
 });
 let searchRequestSequence = 0;
 let snippetRequestSequence = 0;
+let logRequestSequence = 0;
 let applyingSharedUrlState = false;
 let searchSessionPromise: Promise<SearchSession | null> | null = null;
 let searchPreloadScheduled = false;
-let searchPreloadTimer: number | null = null;
+let searchPreloadTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let searchPreloadIdleHandle: number | null = null;
+const parquetReportEnabled = isParquetReportEnabled(
+  window.location.search,
+  import.meta.env.VITE_REPORT_DATA_FORMAT || "",
+);
+const reportDataBaseUrl = normalizedReportDataBaseUrl(
+  new URLSearchParams(window.location.search).get("dataBaseUrl") ||
+    import.meta.env.VITE_REPORT_DATA_BASE_URL ||
+    "./data/",
+);
+const parquetCacheMode = normalizedParquetCacheMode(
+  new URLSearchParams(window.location.search).get("cacheFs") ||
+    new URLSearchParams(window.location.search).get("duckdbCache") ||
+    import.meta.env.VITE_DUCKDB_CACHE_MODE ||
+    "direct",
+);
+const reportIndexPath = `${reportDataBaseUrl}index.json`;
+let parquetClientPromise: Promise<ParquetQueryClient | null> | null = null;
 
 const expandedHistory = reactive<Record<string, boolean>>({});
 const runDetailsById = reactive<Record<string, FullRun | undefined>>({});
@@ -219,6 +257,7 @@ const selectedSearchFields = computed<{ label: string; value: string }[]>(() => 
     { label: "Features", value: (result.features || []).map((feature) => feature.replace(/_/g, " ")).join(", ") },
   ].filter((field) => field.value);
 });
+const selectedLogText = computed<string>(() => selectedLogLines.value.map((line) => line.raw_line).join("\n"));
 
 const summaryCards = computed<SummaryCard[]>(() => {
   const latest = latestSummary.value;
@@ -272,6 +311,25 @@ function highlightSearchResultText(value: string | null | undefined): string {
   return highlightSearchMatch(value, trimmedSearchQuery.value);
 }
 
+function normalizedReportDataBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "./data/";
+  }
+  return trimmed.replace(/\/?$/, "/");
+}
+
+function normalizedParquetCacheMode(value: string | null | undefined): ParquetCacheMode {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, "_");
+  if (normalized === "auto" || normalized === "on_disk" || normalized === "in_mem") {
+    return normalized;
+  }
+  return "direct";
+}
+
 function historyRun(summaryId: string): FullRun | null {
   return runDetailsById[summaryId] || null;
 }
@@ -306,7 +364,8 @@ function isHistoryExpanded(summaryId: string): boolean {
 
 async function bootstrap(): Promise<void> {
   try {
-    index.value = await fetchIndex("./data/index.json");
+    const fetchOptions = await reportDataOptions();
+    index.value = await fetchReportIndex(reportIndexPath, fetchOptions);
     loading.value = false;
 
     if (!hasRuns.value) {
@@ -322,10 +381,12 @@ async function bootstrap(): Promise<void> {
 
     const target = pendingNavigationTarget.value || window.location.hash.slice(1);
     if (target && (!searchStateApplied || target !== SEARCH_SECTION_HASH.slice(1))) {
+      await latestPromise;
+      await nextTick();
       await navigateToSection(target, { expandArchived: true });
+    } else {
+      await latestPromise;
     }
-
-    await latestPromise;
   } catch (error) {
     errorMessage.value = errorMessageOf(error);
     loading.value = false;
@@ -338,7 +399,7 @@ async function loadLatestRun(): Promise<void> {
   latestRunLoading.value = true;
   latestRunError.value = "";
   try {
-    latestRun.value = await fetchRun(latestSummary.value.file);
+    latestRun.value = await fetchReportRun(latestSummary.value, await reportDataOptions());
   } catch (error) {
     latestRunError.value = errorMessageOf(error);
   } finally {
@@ -355,12 +416,27 @@ async function ensureHistoryRunLoaded(summary: RunSummary): Promise<void> {
   runLoading[summary.id] = true;
 
   try {
-    runDetailsById[summary.id] = await fetchRun(summary.file);
+    runDetailsById[summary.id] = await fetchReportRun(summary, await reportDataOptions());
   } catch (error) {
     runErrors[summary.id] = errorMessageOf(error);
   } finally {
     runLoading[summary.id] = false;
   }
+}
+
+async function reportDataOptions(): Promise<ReportDataFetchOptions> {
+  if (!parquetReportEnabled) {
+    return { parquet: false, parquetClient: null };
+  }
+  if (!parquetClientPromise) {
+    parquetClientPromise = import("./lib/duckdbParquetQueryClient")
+      .then((module) => module.createDuckDbParquetQueryClient({ cacheMode: parquetCacheMode }))
+      .catch(() => null);
+  }
+  return {
+    parquet: true,
+    parquetClient: await parquetClientPromise,
+  };
 }
 
 async function ensureComparisonRunLoadedForRunOrdinal(runOrdinal: number): Promise<void> {
@@ -405,7 +481,7 @@ function cancelSearchSessionPreload(): void {
     window.cancelIdleCallback(searchPreloadIdleHandle);
   }
   if (searchPreloadTimer !== null) {
-    window.clearTimeout(searchPreloadTimer);
+    globalThis.clearTimeout(searchPreloadTimer);
   }
   searchPreloadIdleHandle = null;
   searchPreloadTimer = null;
@@ -433,7 +509,7 @@ async function ensureSearchSession(): Promise<SearchSession | null> {
       };
       const payload =
         searchIndexPayload.value ||
-        (await fetchSearchIndexPayload("./data/search-index.json"));
+        (await fetchReportSearchIndexPayload());
       searchIndexPayload.value = payload;
       searchSession.value = await createPersistentSearchSession(payload, {
         onProgress: (progress) => {
@@ -458,6 +534,21 @@ async function ensureSearchSession(): Promise<SearchSession | null> {
   })();
 
   return searchSessionPromise;
+}
+
+async function fetchReportSearchIndexPayload(): Promise<SearchIndexPayload> {
+  const currentIndex = index.value;
+  const fetchOptions = await reportDataOptions();
+
+  if (fetchOptions.parquet && fetchOptions.parquetClient && currentIndex) {
+    try {
+      return await fetchParquetSearchIndexPayload(currentIndex, fetchOptions.parquetClient);
+    } catch (error) {
+      console.warn("Falling back to JSON search index after Parquet search load failed.", error);
+    }
+  }
+
+  return fetchSearchIndexPayload(`${reportDataBaseUrl}search-index.json`);
 }
 
 async function refreshSearchResults(): Promise<void> {
@@ -791,6 +882,30 @@ async function loadSearchResultSnippet(result: SearchResult, requestId: number):
   }
 }
 
+async function hydrateSelectedSearchResultDetail(result: SearchResult, requestId: number): Promise<void> {
+  const currentIndex = index.value;
+  if (!result.caseId || !currentIndex) {
+    return;
+  }
+
+  const fetchOptions = await reportDataOptions();
+  if (!fetchOptions.parquet || !fetchOptions.parquetClient) {
+    return;
+  }
+
+  try {
+    const hydrated = await hydrateParquetSearchResultDetail(result, currentIndex, fetchOptions.parquetClient);
+    if (requestId === snippetRequestSequence && selectedSearchResult.value?.id === result.id) {
+      selectedSearchResult.value = {
+        ...selectedSearchResult.value,
+        ...hydrated,
+      };
+    }
+  } catch (error) {
+    console.warn("Could not hydrate Parquet case detail.", error);
+  }
+}
+
 function openSearchResultModal(
   result: SearchResult,
   options: { syncUrl?: boolean; origin?: "search" | "run-detail" } = {},
@@ -800,6 +915,7 @@ function openSearchResultModal(
   selectedSearchResultOrigin.value = origin;
   selectedSearchResult.value = result;
   const requestId = ++snippetRequestSequence;
+  void hydrateSelectedSearchResultDetail(result, requestId);
   void loadSearchResultSnippet(result, requestId);
   if (syncUrl) {
     syncSearchUrl(result, "push");
@@ -820,6 +936,56 @@ function closeSearchResultModal(options: { syncUrl?: boolean } = {}): void {
 
 function openRunDetailCaseModal(result: SearchResult): void {
   openSearchResultModal(result, { syncUrl: false, origin: "run-detail" });
+}
+
+function closeLogModal(): void {
+  selectedLog.value = null;
+  selectedLogLines.value = [];
+  selectedLogLoading.value = false;
+  selectedLogError.value = "";
+  logRequestSequence += 1;
+  unlockPageScroll();
+}
+
+async function openRunLogModal(summary: RunSummary, logFile: LogFileRecord): Promise<void> {
+  const requestId = ++logRequestSequence;
+  selectedLog.value = { summary, logFile };
+  selectedLogLines.value = [];
+  selectedLogError.value = "";
+  selectedLogLoading.value = true;
+  lockPageScroll();
+
+  const fetchOptions = await reportDataOptions();
+  if (!fetchOptions.parquet || !fetchOptions.parquetClient) {
+    if (requestId === logRequestSequence) {
+      selectedLogError.value = "Log detail is available when Parquet report data is enabled.";
+      selectedLogLoading.value = false;
+    }
+    return;
+  }
+
+  try {
+    const lines = await fetchParquetLogLines(summary, logFile, fetchOptions.parquetClient);
+    if (requestId === logRequestSequence) {
+      selectedLogLines.value = lines;
+    }
+  } catch (error) {
+    if (requestId === logRequestSequence) {
+      selectedLogError.value = errorMessageOf(error);
+    }
+  } finally {
+    if (requestId === logRequestSequence) {
+      selectedLogLoading.value = false;
+    }
+  }
+}
+
+function openLatestRunLogModal(logFile: LogFileRecord): void {
+  const summary = latestSummary.value;
+  if (!summary) {
+    return;
+  }
+  void openRunLogModal(summary, logFile);
 }
 
 async function openSelectedSearchRun(): Promise<void> {
@@ -954,6 +1120,10 @@ function handleDocumentFocus(event: FocusEvent): void {
 
 function handleDocumentKeydown(event: KeyboardEvent): void {
   if (event.key === "Escape") {
+    if (selectedLog.value) {
+      closeLogModal();
+      return;
+    }
     if (selectedSearchResult.value) {
       closeSearchResultModal();
       return;
@@ -995,6 +1165,9 @@ onBeforeUnmount(() => {
   window.removeEventListener("popstate", handleWindowPopstate);
   window.removeEventListener("resize", handleWindowResize);
   cancelSearchSessionPreload();
+  if (selectedLog.value) {
+    closeLogModal();
+  }
   unlockPageScroll();
 });
 </script>
@@ -1257,6 +1430,7 @@ onBeforeUnmount(() => {
               :default-suite-open="true"
               :is-latest-run="true"
               @open-case="openRunDetailCaseModal"
+              @open-log="openLatestRunLogModal"
             />
           </div>
         </section>
@@ -1289,6 +1463,7 @@ onBeforeUnmount(() => {
               @toggle="handleHistoryToggle"
               @retry="retryHistoryLoad"
               @open-case="openRunDetailCaseModal"
+              @open-log="openRunLogModal"
             />
           </div>
         </section>
@@ -1355,6 +1530,43 @@ onBeforeUnmount(() => {
             <span v-else-if="caseSnippet.startLine" class="subtle">Starts at line {{ caseSnippet.startLine }}</span>
           </div>
           <pre class="case-code"><code :class="`language-${caseSnippet.language}`" v-html="highlightedSearchSnippet"></code></pre>
+        </section>
+      </section>
+    </div>
+
+    <div
+      v-if="selectedLog"
+      ref="caseModalBackdrop"
+      class="case-modal-backdrop"
+      aria-label="Close log details"
+      @click.self="closeLogModal"
+      @wheel="handleModalBackdropWheel"
+      @touchstart="handleModalBackdropTouchStart"
+      @touchmove="handleModalBackdropTouchMove"
+    >
+      <section
+        class="case-modal log-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="`${selectedLog.logFile.log_source} log details`"
+      >
+        <button class="case-modal-close" type="button" aria-label="Close log details" @click="closeLogModal">
+          &times;
+        </button>
+
+        <div class="case-modal-header">
+          <div>
+            <p class="eyebrow">Log Detail</p>
+            <h2>{{ selectedLog.logFile.log_source }}</h2>
+            <p class="subtle mono">{{ selectedLog.logFile.log_file }}</p>
+          </div>
+          <span class="pill">{{ selectedLog.logFile.line_count.toLocaleString() }} lines</span>
+        </div>
+
+        <section class="case-modal-section">
+          <div v-if="selectedLogLoading" class="loader">Loading log lines...</div>
+          <div v-else-if="selectedLogError" class="loader history-detail-state">{{ selectedLogError }}</div>
+          <pre v-else class="case-detail-text log-detail-text">{{ selectedLogText }}</pre>
         </section>
       </section>
     </div>

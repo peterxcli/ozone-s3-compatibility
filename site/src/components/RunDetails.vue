@@ -14,7 +14,7 @@ import {
   suiteLabel,
 } from "../lib/report";
 import type { SearchResult } from "../lib/search";
-import type { FeatureComparisonSummary, FullRun, RunLike } from "../lib/types";
+import type { FeatureComparisonSummary, FullRun, LogFileRecord, RunLike } from "../lib/types";
 
 interface RunSuiteFeatureMovement {
   key: string;
@@ -42,6 +42,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   "open-case": [result: SearchResult];
+  "open-log": [logFile: LogFileRecord];
 }>();
 
 const orderedSuites = computed(() => orderedSuitesFromRun(props.run, props.suiteOrder));
@@ -60,6 +61,7 @@ const scopeInfo = computed(() => runScope(props.run));
 const ozoneCommit = computed(() => props.run.sources?.ozone?.short_commit || "unknown");
 const s3TestsCommit = computed(() => props.run.sources?.s3_tests?.short_commit || "unknown");
 const mintCommit = computed(() => props.run.sources?.mint?.short_commit || "unknown");
+const logFiles = computed(() => props.run.log_files || []);
 
 const showS3SelectorChip = computed(
   () => execution.value && execution.value.s3_tests_args !== DEFAULT_S3_TESTS_ARGS
@@ -76,6 +78,10 @@ function featureCountText(count: number, state: "improved" | "degraded"): string
 
 function openCase(result: SearchResult): void {
   emit("open-case", result);
+}
+
+function openLog(logFile: LogFileRecord): void {
+  emit("open-log", logFile);
 }
 </script>
 
@@ -108,6 +114,29 @@ function openCase(result: SearchResult): void {
         </span>
       </div>
     </div>
+
+    <section v-if="run.log_files?.length" class="run-log-list" aria-label="Run logs">
+      <div class="run-log-head">
+        <div>
+          <p class="eyebrow">Logs</p>
+          <h3>Run Logs</h3>
+        </div>
+        <span class="pill">{{ logFiles.length }} files</span>
+      </div>
+      <div class="run-log-buttons">
+        <button
+          v-for="logFile in logFiles"
+          :key="`${logFile.log_source}:${logFile.log_file}`"
+          class="run-log-button"
+          type="button"
+          @click="openLog(logFile)"
+        >
+          <span class="run-log-source">{{ logFile.log_source }}</span>
+          <span class="run-log-path mono">{{ logFile.log_file }}</span>
+          <span class="pill">{{ logFile.line_count.toLocaleString() }} lines</span>
+        </button>
+      </div>
+    </section>
 
     <div class="suite-grid">
       <SuiteCard
