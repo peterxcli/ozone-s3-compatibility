@@ -38,7 +38,9 @@ execFileSync(
 const {
   caseIdentityForResult,
   parseSearchShareState,
+  parseSharedCaseIdentity,
   resultMatchesSharedCase,
+  runDetailCaseUrlFromState,
   searchUrlFromState,
 } = require(path.join(outDir, "shareState.js"));
 
@@ -66,6 +68,25 @@ test("serializes and parses a selected test case permalink", () => {
   assert.equal(parsed.query, "expect mismatch");
   assert.equal(parsed.suiteFilter, "all");
   assert.deepEqual(parsed.selectedCase, selectedCase);
+});
+
+test("serializes run detail case permalinks without turning them into search URLs", () => {
+  const selectedCase = {
+    runId: "2026-05-06T06-46-57Z",
+    suiteKey: "s3_tests",
+    testName: "test_object_create_bad_expect_mismatch",
+  };
+  const url = runDetailCaseUrlFromState(
+    { selectedCase, hash: "latest-run-section" },
+    "https://example.test/ozone-s3-compatibility/?q=old#search-section",
+  );
+
+  assert.equal(
+    url,
+    "/ozone-s3-compatibility/?run=2026-05-06T06-46-57Z&caseSuite=s3_tests&test=test_object_create_bad_expect_mismatch#latest-run-section",
+  );
+  assert.deepEqual(parseSharedCaseIdentity(`https://example.test${url}`), selectedCase);
+  assert.equal(parseSearchShareState(`https://example.test${url}`).query, "");
 });
 
 test("matches selected case by run, suite, and test function or source symbol", () => {

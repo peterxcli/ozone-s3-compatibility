@@ -13,8 +13,10 @@ import {
 import {
   SEARCH_SECTION_HASH,
   caseIdentityForResult,
+  parseSharedCaseIdentity,
   parseSearchShareState,
   resultMatchesSharedCase,
+  runDetailCaseUrlFromState,
   searchUrlFromState,
 } from "./lib/shareState";
 import {
@@ -32,6 +34,7 @@ import {
   suiteLabel,
 } from "./lib/report";
 import { fetchParquetLogLines, isParquetReportEnabled } from "./lib/parquetReport";
+import { storedCaseSearchResult } from "./lib/caseResult";
 import {
   createPersistentSearchSession,
   fetchParquetSearchIndexPayload,
@@ -49,6 +52,8 @@ import type {
   OrderedSuiteEntry,
   RunLike,
   RunSummary,
+  StoredCaseEntry,
+  SuiteRecord,
 } from "./lib/types";
 import type { ParquetQueryClient } from "./lib/parquetReport";
 import type { ReportDataFetchOptions } from "./lib/report";
@@ -236,11 +241,7 @@ const searchResultSummary = computed<string>(() => {
 });
 const highlightedSearchSnippet = computed<string>(() => highlightCode(caseSnippet.text, caseSnippet.language));
 const selectedSearchPermalink = computed<string>(() =>
-  selectedSearchResult.value
-    ? searchUrlForResult(selectedSearchResult.value, {
-        includeCurrentSearch: selectedSearchResultOrigin.value === "search",
-      })
-    : ""
+  selectedSearchResult.value ? permalinkForSelectedResult(selectedSearchResult.value) : ""
 );
 const selectedSearchFields = computed<{ label: string; value: string }[]>(() => {
   const result = selectedSearchResult.value;
@@ -383,9 +384,10 @@ async function bootstrap(): Promise<void> {
 
     await nextTick();
     const searchStateApplied = await applySearchUrlState();
+    const runDetailStateApplied = searchStateApplied ? false : await applyRunDetailUrlState();
 
     const target = pendingNavigationTarget.value || window.location.hash.slice(1);
-    if (target && (!searchStateApplied || target !== SEARCH_SECTION_HASH.slice(1))) {
+    if (target && !runDetailStateApplied && (!searchStateApplied || target !== SEARCH_SECTION_HASH.slice(1))) {
       await nextTick();
       await navigateToSection(target, { expandArchived: true });
     }
@@ -497,7 +499,11 @@ async function fetchReportSearchIndexPayload(): Promise<SearchIndexPayload> {
 
   if (fetchOptions.parquet && fetchOptions.parquetClient && currentIndex) {
     try {
-      return await fetchParquetSearchIndexPayload(currentIndex, fetchOptions.parquetClient);
+      return await fetchParquetSearchIndexPayload(
+        currentIndex,
+        fetchOptions.parquetClient,
+        `${reportDataBaseUrl}search/index.parquet`,
+      );
     } catch (error) {
       console.warn("Falling back to JSON search index after Parquet search load failed.", error);
     }
@@ -596,6 +602,36 @@ function searchUrlForResult(
   );
 }
 
+function runDetailHashForResult(result: SearchResult): string {
+  const runIndex = index.value?.runs.findIndex(
+    (summary) => summary.id === result.runId || summary.run_id === result.runId || summary.file === result.runFile
+  );
+  if (runIndex === 0) {
+    return "latest-run-section";
+  }
+  if (runIndex !== undefined && runIndex > 0 && index.value) {
+    return archivedRunAnchorId(index.value.runs[runIndex], runIndex - 1);
+  }
+  return window.location.hash.slice(1) || "latest-run-section";
+}
+
+function runDetailCaseUrlForResult(result: SearchResult): string {
+  return runDetailCaseUrlFromState(
+    {
+      selectedCase: caseIdentityForResult(result),
+      hash: runDetailHashForResult(result),
+    },
+    window.location.href,
+  );
+}
+
+function permalinkForSelectedResult(result: SearchResult): string {
+  if (selectedSearchResultOrigin.value === "run-detail") {
+    return runDetailCaseUrlForResult(result);
+  }
+  return searchUrlForResult(result, { includeCurrentSearch: true });
+}
+
 function syncSearchUrl(result: SearchResult | null = selectedSearchResult.value, mode: "replace" | "push" = "replace"): void {
   if (applyingSharedUrlState) {
     return;
@@ -642,12 +678,15 @@ async function openSharedSearchCase(selectedCase: SharedCaseIdentity): Promise<v
   openSearchResultModal(result, { syncUrl: false });
 }
 
+function isSearchUrlState(shareState = parseSearchShareState(window.location.href)): boolean {
+  const hash = window.location.hash;
+  return Boolean(shareState.query || (shareState.selectedCase && hash === SEARCH_SECTION_HASH));
+}
+
 async function applySearchUrlState(): Promise<boolean> {
   const shareState = parseSearchShareState(window.location.href);
-  const sharedQuery = shareState.query || shareState.selectedCase?.testName || "";
-  const hasSharedSearchState = Boolean(sharedQuery || shareState.selectedCase);
 
-  if (!hasSharedSearchState) {
+  if (!isSearchUrlState(shareState)) {
     if (selectedSearchResult.value) {
       closeSearchResultModal({ syncUrl: false });
     }
@@ -655,7 +694,7 @@ async function applySearchUrlState(): Promise<boolean> {
   }
 
   applyingSharedUrlState = true;
-  searchQuery.value = sharedQuery;
+  searchQuery.value = shareState.query;
   searchSuiteFilter.value = normalizedSuiteFilter(shareState.suiteFilter);
   applyingSharedUrlState = false;
 
@@ -668,6 +707,87 @@ async function applySearchUrlState(): Promise<boolean> {
     closeSearchResultModal({ syncUrl: false });
   }
 
+  return true;
+}
+
+function findSummaryByRunId(runId: string): { runIndex: number; summary: RunSummary } | null {
+  const runIndex = index.value?.runs.findIndex((summary) => summary.id === runId || summary.run_id === runId) ?? -1;
+  if (!index.value || runIndex < 0) {
+    return null;
+  }
+  return { runIndex, summary: index.value.runs[runIndex] };
+}
+
+async function loadRunForSharedCase(summary: RunSummary, runIndex: number): Promise<FullRun | null> {
+  if (runIndex === 0) {
+    await loadLatestRun();
+    return latestRun.value;
+  }
+
+  expandedHistory[summary.id] = true;
+  await ensureHistoryRunLoaded(summary);
+  return runDetailsById[summary.id] || null;
+}
+
+function storedCasesForSuite(suite: SuiteRecord): StoredCaseEntry[] {
+  return suite.cases || suite.non_passing_cases || [];
+}
+
+function findRunDetailCaseResult(
+  run: FullRun,
+  summary: RunSummary,
+  selectedCase: SharedCaseIdentity,
+  runIndex: number,
+): SearchResult | null {
+  const suiteKeys = selectedCase.suiteKey ? [selectedCase.suiteKey] : Object.keys(run.suites || {});
+
+  for (const suiteKey of suiteKeys) {
+    const suite = run.suites?.[suiteKey];
+    if (!suite) {
+      continue;
+    }
+    for (const caseEntry of storedCasesForSuite(suite)) {
+      const result = storedCaseSearchResult({
+        run,
+        suiteKey,
+        suite,
+        caseEntry,
+        runFile: summary.file,
+        isLatestRun: runIndex === 0,
+      });
+      if (resultMatchesSharedCase(result, selectedCase)) {
+        return result;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function applyRunDetailUrlState(): Promise<boolean> {
+  const selectedCase = parseSharedCaseIdentity(window.location.href);
+  if (!selectedCase) {
+    return false;
+  }
+
+  const target = findSummaryByRunId(selectedCase.runId);
+  if (!target) {
+    return false;
+  }
+
+  const run = await loadRunForSharedCase(target.summary, target.runIndex);
+  if (!run) {
+    return false;
+  }
+
+  const result = findRunDetailCaseResult(run, target.summary, selectedCase, target.runIndex);
+  if (!result) {
+    runErrors[target.summary.id] = `Could not find shared test case ${selectedCase.testName} in run ${selectedCase.runId}.`;
+    return false;
+  }
+
+  await navigateToSection(window.location.hash.slice(1) || runDetailHashForResult(result), { expandArchived: true });
+  openSearchResultModal(result, { syncUrl: false, origin: "run-detail" });
   return true;
 }
 
@@ -1093,7 +1213,12 @@ function handleHashChange(): void {
 }
 
 function handleWindowPopstate(): void {
-  void applySearchUrlState();
+  void (async () => {
+    const searchStateApplied = await applySearchUrlState();
+    if (!searchStateApplied) {
+      await applyRunDetailUrlState();
+    }
+  })();
 }
 
 function handleWindowResize(): void {
@@ -1404,6 +1529,7 @@ onBeforeUnmount(() => {
               :suite-order="suiteOrder"
               :default-suite-open="true"
               :is-latest-run="true"
+              case-permalink-hash="latest-run-section"
               @open-case="openRunDetailCaseModal"
               @open-log="openLatestRunLogModal"
             />

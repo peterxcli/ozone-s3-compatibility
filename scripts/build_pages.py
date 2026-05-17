@@ -769,10 +769,18 @@ def remove_json_report_data(data_dir: Path) -> None:
             path.unlink()
     for path in [
         data_dir / "index",
-        data_dir / "search",
     ]:
         if path.exists():
             shutil.rmtree(path)
+    search_dir = data_dir / "search"
+    if search_dir.exists():
+        for path in search_dir.rglob("*.json"):
+            path.unlink()
+        for path in sorted((path for path in search_dir.rglob("*") if path.is_dir()), reverse=True):
+            if not any(path.iterdir()):
+                path.rmdir()
+        if not any(search_dir.iterdir()):
+            search_dir.rmdir()
     for run_file in (data_dir / "runs").glob("*.json"):
         run_file.unlink()
 

@@ -78,6 +78,19 @@ test("can opt into DuckDB cached HTTP reads for Parquet data", () => {
   assert.match(duckdbClientSource, /falling back to direct HTTP Parquet reads/);
 });
 
+test("loads Parquet search from a global index instead of per-run search files", () => {
+  assert.match(appSource, /fetchParquetSearchIndexPayload\([\s\S]*currentIndex,[\s\S]*fetchOptions\.parquetClient,[\s\S]*`\$\{reportDataBaseUrl\}search\/index\.parquet`,[\s\S]*\)/);
+  assert.doesNotMatch(appSource, /parquetDetailPath\(summary,\s*"search-rows\.parquet"\)/);
+});
+
+test("routes run detail case permalinks without bootstrapping search", () => {
+  assert.match(appSource, /runDetailCaseUrlFromState/);
+  assert.match(appSource, /function isSearchUrlState/);
+  assert.match(appSource, /function applyRunDetailUrlState/);
+  assert.match(appSource, /await applyRunDetailUrlState\(\)/);
+  assert.doesNotMatch(appSource, /shareState\.query \|\| shareState\.selectedCase\?\.testName/);
+});
+
 test("loads DuckDB-WASM runtime assets from the pinned CDN bundle", () => {
   assert.match(duckdbClientSource, /getJsDelivrBundles/);
   assert.match(duckdbClientSource, /DUCKDB_CDN_VERSION/);
@@ -114,7 +127,7 @@ test("opens archived run suite details when a history run expands", () => {
 test("applies initial section hash navigation without loading latest run detail", () => {
   assert.match(
     appSource,
-    /if \(target && \(!searchStateApplied \|\| target !== SEARCH_SECTION_HASH\.slice\(1\)\)\) \{[\s\S]*await nextTick\(\);[\s\S]*await navigateToSection\(target, \{ expandArchived: true \}\);[\s\S]*\}/,
+    /if \(target && !runDetailStateApplied && \(!searchStateApplied \|\| target !== SEARCH_SECTION_HASH\.slice\(1\)\)\) \{[\s\S]*await nextTick\(\);[\s\S]*await navigateToSection\(target, \{ expandArchived: true \}\);[\s\S]*\}/,
   );
   assert.doesNotMatch(appSource, /await latestPromise/);
 });

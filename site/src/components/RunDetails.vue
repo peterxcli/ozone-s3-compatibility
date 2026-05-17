@@ -30,6 +30,7 @@ const props = withDefaults(
     suiteOrder?: string[];
     defaultSuiteOpen?: boolean;
     isLatestRun?: boolean;
+    casePermalinkHash?: string;
   }>(),
   {
     runFile: "",
@@ -37,6 +38,7 @@ const props = withDefaults(
     suiteOrder: () => [],
     defaultSuiteOpen: true,
     isLatestRun: false,
+    casePermalinkHash: "",
   }
 );
 
@@ -149,6 +151,7 @@ function openLog(logFile: LogFileRecord): void {
         :previous-suite="previousSuites[entry.key] || null"
         :open-by-default="defaultSuiteOpen"
         :is-latest-run="isLatestRun"
+        :case-permalink-hash="casePermalinkHash"
         @open-case="openCase"
       />
     </div>

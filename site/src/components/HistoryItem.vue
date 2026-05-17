@@ -142,6 +142,7 @@ function openLog(logFile: LogFileRecord): void {
         :suite-order="suiteOrder"
         :default-suite-open="true"
         :is-latest-run="false"
+        :case-permalink-hash="anchorId"
         @open-case="openCase"
         @open-log="openLog"
       />

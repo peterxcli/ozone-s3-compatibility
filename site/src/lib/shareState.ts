@@ -35,15 +35,20 @@ export function parseSearchShareState(href = browserHref()): SearchShareState {
   const url = new URL(href, browserHref());
   const query = url.searchParams.get(SEARCH_QUERY_PARAM)?.trim() || "";
   const suiteFilter = url.searchParams.get(SEARCH_SUITE_PARAM)?.trim() || "all";
-  const runId = url.searchParams.get(SEARCH_RUN_PARAM)?.trim() || "";
-  const suiteKey = url.searchParams.get(SEARCH_CASE_SUITE_PARAM)?.trim() || "";
-  const testName = url.searchParams.get(SEARCH_TEST_PARAM)?.trim() || "";
 
   return {
     query,
     suiteFilter: suiteFilter || "all",
-    selectedCase: runId && testName ? { runId, suiteKey, testName } : null,
+    selectedCase: parseSharedCaseIdentity(href),
   };
+}
+
+export function parseSharedCaseIdentity(href = browserHref()): SharedCaseIdentity | null {
+  const url = new URL(href, browserHref());
+  const runId = url.searchParams.get(SEARCH_RUN_PARAM)?.trim() || "";
+  const suiteKey = url.searchParams.get(SEARCH_CASE_SUITE_PARAM)?.trim() || "";
+  const testName = url.searchParams.get(SEARCH_TEST_PARAM)?.trim() || "";
+  return runId && testName ? { runId, suiteKey, testName } : null;
 }
 
 export function searchUrlFromState(
@@ -85,6 +90,30 @@ export function searchUrlFromState(
   if (query || selectedCase) {
     url.hash = SEARCH_SECTION_HASH;
   }
+
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+export function runDetailCaseUrlFromState(
+  state: {
+    selectedCase: SharedCaseIdentity;
+    hash: string;
+  },
+  href = browserHref(),
+): string {
+  const url = new URL(href, browserHref());
+  const hash = state.hash.trim().replace(/^#/, "");
+
+  url.searchParams.delete(SEARCH_QUERY_PARAM);
+  url.searchParams.delete(SEARCH_SUITE_PARAM);
+  url.searchParams.set(SEARCH_RUN_PARAM, state.selectedCase.runId);
+  if (state.selectedCase.suiteKey) {
+    url.searchParams.set(SEARCH_CASE_SUITE_PARAM, state.selectedCase.suiteKey);
+  } else {
+    url.searchParams.delete(SEARCH_CASE_SUITE_PARAM);
+  }
+  url.searchParams.set(SEARCH_TEST_PARAM, state.selectedCase.testName);
+  url.hash = hash ? `#${hash}` : "";
 
   return `${url.pathname}${url.search}${url.hash}`;
 }

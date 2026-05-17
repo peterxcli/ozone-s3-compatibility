@@ -456,6 +456,17 @@ def build_search_rows(case_rows_by_suite: dict[str, list[dict[str, Any]]]) -> li
     return rows
 
 
+def build_global_search_rows(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for run in sorted(runs, key=lambda item: string_field(item.get("started_at")), reverse=True):
+        case_rows_by_suite = {
+            suite_key: build_case_rows(run, suite_key, suite)
+            for suite_key, suite in sorted(run.get("suites", {}).items())
+        }
+        rows.extend(build_search_rows(case_rows_by_suite))
+    return rows
+
+
 def level_for_line(line: str) -> str | None:
     match = re.search(r"\b(ERROR|WARN|WARNING|INFO|DEBUG|TRACE)\b", line)
     if not match:
@@ -737,6 +748,13 @@ def write_pages_parquet_dataset(
     for run in runs_oldest_first:
         run_id = string_field(run.get("run_id") or run.get("id"))
         file_records.extend(write_run_dataset(run, data_dir, raw_roots_by_run_id.get(run_id)))
+
+    search_dir = data_dir / "search"
+    search_dir.mkdir(parents=True, exist_ok=True)
+    global_search_path = search_dir / "index.parquet"
+    global_search_rows = build_global_search_rows(runs_newest_first)
+    write_parquet(global_search_path, global_search_rows, SEARCH_ROWS_SCHEMA)
+    file_records.append(file_record(data_dir, "", global_search_path, "search_index", len(global_search_rows)))
 
     write_parquet(catalog_dir / "runs.parquet", build_catalog_runs(runs), CATALOG_RUNS_SCHEMA)
     write_parquet(

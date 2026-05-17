@@ -11,7 +11,7 @@ import {
   statusClass,
   summarizeFeatureComparisons,
 } from "../lib/report";
-import { caseIdentityForResult, searchUrlFromState } from "../lib/shareState";
+import { caseIdentityForResult, runDetailCaseUrlFromState } from "../lib/shareState";
 import type { SearchResult } from "../lib/search";
 import type {
   CaseStatusChange,
@@ -42,12 +42,14 @@ const props = withDefaults(
     previousSuite?: SuiteRecord | null;
     openByDefault?: boolean;
     isLatestRun?: boolean;
+    casePermalinkHash?: string;
   }>(),
   {
     runFile: "",
     previousSuite: null,
     openByDefault: true,
     isLatestRun: false,
+    casePermalinkHash: "",
   }
 );
 
@@ -239,9 +241,10 @@ function openCaseDetails(entry: StoredCaseEntry): void {
 }
 
 function casePermalink(entry: StoredCaseEntry): string {
-  return searchUrlFromState(
+  return runDetailCaseUrlFromState(
     {
       selectedCase: caseIdentityForResult(caseResult(entry)),
+      hash: props.casePermalinkHash,
     },
     window.location.href,
   );

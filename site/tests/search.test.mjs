@@ -396,9 +396,7 @@ test("loads partitioned search index shards and reconstructs the legacy payload 
   }
 });
 
-test("limits concurrent Parquet search row queries while loading archived runs", async () => {
-  let activeQueries = 0;
-  let maxActiveQueries = 0;
+test("loads Parquet search rows from the global search index without scanning run details", async () => {
   const runIds = Array.from({ length: 12 }, (_, index) => `run-${String(index).padStart(2, "0")}`);
   const indexPayload = {
     generated_at: "2026-05-17T02:15:00.000Z",
@@ -417,37 +415,31 @@ test("limits concurrent Parquet search row queries while loading archived runs",
       },
     })),
   };
+  const requests = [];
   const client = {
     async queryRows(filePath) {
-      activeQueries += 1;
-      maxActiveQueries = Math.max(maxActiveQueries, activeQueries);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      activeQueries -= 1;
-
-      const runId = filePath.split("/runs/")[1]?.split("/")[0] || "unknown";
-      return [
-        {
-          run_id: runId,
-          suite_key: "s3_tests",
-          case_id: `s3_tests:${runId}`,
-          status: "fail",
-          features: { toArray: () => ["policy"] },
-          test_name: `test_${runId}`,
-          classname: "s3tests.functional.test_s3",
-          message: "AccessDenied",
-          detail_preview: "short preview",
-          source_path: "s3tests/functional/test_s3.py",
-          source_symbol: `test_${runId}`,
-          search_text: "AccessDenied policy",
-        },
-      ];
+      requests.push(filePath);
+      return runIds.map((runId) => ({
+        run_id: runId,
+        suite_key: "s3_tests",
+        case_id: `s3_tests:${runId}`,
+        status: "fail",
+        features: { toArray: () => ["policy"] },
+        test_name: `test_${runId}`,
+        classname: "s3tests.functional.test_s3",
+        message: "AccessDenied",
+        detail_preview: "short preview",
+        source_path: "s3tests/functional/test_s3.py",
+        source_symbol: `test_${runId}`,
+        search_text: "AccessDenied policy",
+      }));
     },
   };
 
-  const payload = await fetchParquetSearchIndexPayload(indexPayload, client);
+  const payload = await fetchParquetSearchIndexPayload(indexPayload, client, "./data/search/index.parquet");
 
   assert.equal(payload.row_count, 12);
-  assert.ok(maxActiveQueries <= 6, `expected at most 6 active search queries, saw ${maxActiveQueries}`);
+  assert.deepEqual(requests, ["./data/search/index.parquet"]);
 });
 
 test("normalizes Parquet search rows into the existing search payload shape", () => {

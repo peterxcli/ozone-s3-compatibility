@@ -198,6 +198,11 @@ class ParquetRunWriterTests(unittest.TestCase):
             self.assertIn("AccessDenied", search_by_case["s3_tests:test_bucket_policy_access_denied"]["search_text"])
             self.assertIn("Access Denied", search_by_case["s3_tests:test_bucket_policy_access_denied"]["search_text"])
 
+            global_search_rows = pq.read_table(root / "data" / "search" / "index.parquet").to_pylist()
+            global_search_by_case = {row["case_id"]: row for row in global_search_rows}
+            self.assertIn("s3_tests:test_bucket_policy_access_denied", global_search_by_case)
+            self.assertIn("AccessDenied", global_search_by_case["s3_tests:test_bucket_policy_access_denied"]["search_text"])
+
             logs = pq.read_table(root / "data" / "runs" / run["run_id"] / "logs-pytest.parquet").to_pylist()
             self.assertEqual(["first line", "ERROR failed request"], [row["raw_line"] for row in logs])
             self.assertEqual([1, 2], [row["line_number"] for row in logs])

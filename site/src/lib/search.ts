@@ -2,8 +2,6 @@ import { Index, IndexedDB } from "flexsearch";
 import type { Id } from "flexsearch";
 import type { IndexPayload, RunSummary } from "./types";
 
-const PARQUET_SEARCH_QUERY_CONCURRENCY = 6;
-
 export interface SearchIndexRow {
   id: number;
   caseId?: string;
@@ -54,28 +52,6 @@ export interface SearchIndexRowsShard {
 }
 
 export type SearchIndexBootstrapPayload = SearchIndexPayload | PartitionedSearchIndexManifest;
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.min(Math.max(1, concurrency), items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (nextIndex < items.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        results[index] = await mapper(items[index], index);
-      }
-    }),
-  );
-
-  return results;
-}
 
 export interface SearchResult {
   id: string;
@@ -456,16 +432,20 @@ export function normalizeParquetSearchIndex(input: NormalizeParquetSearchInput):
 export async function fetchParquetSearchIndexPayload(
   index: IndexPayload,
   client: SearchParquetQueryClient,
+  searchIndexPath = "data/search/index.parquet",
 ): Promise<SearchIndexPayload> {
-  const rowSets = await mapWithConcurrency(index.runs, PARQUET_SEARCH_QUERY_CONCURRENCY, (summary) =>
-    client.queryRows<ParquetSearchRow>(
-      parquetDetailPath(summary, "search-rows.parquet"),
-      parquetSearchSql("suite_key, classname, test_name"),
-    ),
+  const rows = await client.queryRows<ParquetSearchRow>(
+    searchIndexPath,
+    parquetSearchSql("run_id, suite_key, classname, test_name"),
   );
   const rowsByRunId: Record<string, ParquetSearchRow[]> = {};
-  index.runs.forEach((summary, index) => {
-    rowsByRunId[runIdForSummary(summary)] = rowSets[index] || [];
+  rows.forEach((row) => {
+    const runId = asString(row.run_id);
+    if (!runId) {
+      return;
+    }
+    rowsByRunId[runId] = rowsByRunId[runId] || [];
+    rowsByRunId[runId].push(row);
   });
 
   return normalizeParquetSearchIndex({
