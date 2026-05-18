@@ -57,6 +57,7 @@ export interface ParquetFileTreeNode {
   depth: number;
   kindLabel?: string;
   metaLabels?: string[];
+  collapsedByDefault?: boolean;
   children: ParquetFileTreeNode[];
   file: ParquetFileRecord | null;
 }
@@ -70,6 +71,10 @@ export interface ParquetCatalogLineageRows {
 export interface ParquetFileLineage {
   files: ParquetFileRecord[];
   graph: ParquetFileTreeNode[];
+}
+
+export interface ParquetLineageGroupingOptions {
+  threshold?: number;
 }
 
 const CATALOG_FILES: Array<Pick<ParquetFileRecord, "path" | "kind">> = [
@@ -341,6 +346,7 @@ function lineageNode(input: {
   depth: number;
   kindLabel: string;
   metaLabels?: string[];
+  collapsedByDefault?: boolean;
   file?: ParquetFileRecord | null;
   children?: ParquetFileTreeNode[];
 }): ParquetFileTreeNode {
@@ -351,6 +357,7 @@ function lineageNode(input: {
     depth: input.depth,
     kindLabel: input.kindLabel,
     metaLabels: input.metaLabels || [],
+    collapsedByDefault: input.collapsedByDefault,
     children: input.children || [],
     file: input.file || null,
   };
@@ -504,6 +511,75 @@ export function buildParquetCatalogLineageGraph(
     }
     return catalogFileNode(file, entry.path, featureRows);
   });
+}
+
+function groupingLabelForNode(node: ParquetFileTreeNode): string {
+  if (node.file) {
+    return node.file.kind.replace(/_/g, " ");
+  }
+  if (node.kindLabel === "files row" && node.metaLabels?.[0]) {
+    return node.metaLabels[0];
+  }
+  if (node.kindLabel === "data file" && node.metaLabels?.[0]) {
+    return node.metaLabels[0];
+  }
+  return node.kindLabel || "nodes";
+}
+
+function groupDenseChildren(parent: ParquetFileTreeNode, threshold: number): ParquetFileTreeNode {
+  const groupedChildren = parent.children.map((child) => groupDenseChildren(child, threshold));
+  if (groupedChildren.length <= threshold) {
+    return {
+      ...parent,
+      children: groupedChildren,
+    };
+  }
+
+  const childrenByGroup = new Map<string, ParquetFileTreeNode[]>();
+  groupedChildren.forEach((child) => {
+    const label = groupingLabelForNode(child);
+    childrenByGroup.set(label, [...(childrenByGroup.get(label) || []), child]);
+  });
+
+  const emittedGroups = new Set<string>();
+  const nextChildren: ParquetFileTreeNode[] = [];
+  groupedChildren.forEach((child) => {
+    const label = groupingLabelForNode(child);
+    const group = childrenByGroup.get(label) || [];
+    if (group.length <= 1) {
+      nextChildren.push(child);
+      return;
+    }
+    if (emittedGroups.has(label)) {
+      return;
+    }
+    emittedGroups.add(label);
+    nextChildren.push(
+      lineageNode({
+        id: `${parent.id} group ${label}`,
+        label,
+        path: `${parent.path} group ${label}`,
+        depth: child.depth,
+        kindLabel: "group",
+        metaLabels: [`${group.length.toLocaleString()} items`],
+        collapsedByDefault: true,
+        children: group,
+      }),
+    );
+  });
+
+  return {
+    ...parent,
+    children: nextChildren,
+  };
+}
+
+export function groupParquetLineageGraph(
+  nodes: ParquetFileTreeNode[],
+  options: ParquetLineageGroupingOptions = {},
+): ParquetFileTreeNode[] {
+  const threshold = Math.max(2, Math.floor(options.threshold || 6));
+  return nodes.map((node) => groupDenseChildren(node, threshold));
 }
 
 export function absoluteParquetFileUrl(fileUrlValue: string, baseHref = globalThis.location?.href || "http://localhost/"): string {

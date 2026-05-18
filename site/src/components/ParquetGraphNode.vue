@@ -72,8 +72,10 @@ function activateNode(): void {
     :class="{
       folder: !node.file,
       file: node.file,
+      group: node.kindLabel === 'group',
       open: isOpen,
       selected: node.file?.path === selectedPath,
+      'collapsed-by-default': node.collapsedByDefault,
     }"
   >
     <button

@@ -278,6 +278,39 @@ test("loads catalog row lineage with the Parquet file graph", async () => {
   assert.ok(lineage.graph.some((node) => node.path === "catalog/runs.parquet"));
 });
 
+test("groups dense same-level lineage nodes behind collapsed group cards", () => {
+  compileParquetFiles();
+  const { buildParquetCatalogLineageGraph, groupParquetLineageGraph, normalizeParquetFileCatalogRows } = require(
+    path.join(outDir, "parquetFiles.js"),
+  );
+  const rows = Array.from({ length: 8 }, (_, index) => ({
+    run_id: "run-a",
+    path: `runs/run-a/cases-s3-tests-${index}.parquet`,
+    kind: "cases",
+    suite_key: "s3_tests",
+    log_source: "",
+    row_count: index + 1,
+    byte_size: 1024 + index,
+    content_hash: `case-${index}`,
+    schema_version: 1,
+  }));
+  const files = normalizeParquetFileCatalogRows(rows, "./data/");
+  const graph = buildParquetCatalogLineageGraph(files, {
+    runs: [{ run_id: "run-a", status: "completed", started_at: "2026-05-17T02:15:00Z" }],
+    suites: [{ run_id: "run-a", suite_key: "s3_tests", label: "s3-tests", status: "completed" }],
+    features: [],
+  });
+
+  const grouped = groupParquetLineageGraph(graph, { threshold: 3 });
+  const filesCatalog = grouped.find((node) => node.path === "catalog/files.parquet");
+  const casesGroup = filesCatalog?.children.find((node) => node.kindLabel === "group" && node.label === "cases");
+
+  assert.equal(casesGroup?.collapsedByDefault, true);
+  assert.deepEqual(casesGroup?.metaLabels, ["8 items"]);
+  assert.equal(casesGroup?.children.length, 8);
+  assert.ok(casesGroup?.children.every((node) => node.kindLabel === "files row"));
+});
+
 test("app source wires a Parquet Files section to an embedded non-iframe viewer", () => {
   const appSource = readFileSync(path.join(siteRoot, "src", "App.vue"), "utf8");
   const browserSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetFileBrowser.vue"), "utf8");
@@ -292,22 +325,47 @@ test("app source wires a Parquet Files section to an embedded non-iframe viewer"
   assert.doesNotMatch(viewerSource, /<iframe/i);
 });
 
-test("Parquet files render as a top-down graph and open a persistent modal inspector", () => {
+test("Parquet files render as a left-to-right graph and open a persistent modal inspector", () => {
   const appSource = readFileSync(path.join(siteRoot, "src", "App.vue"), "utf8");
   const browserSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetFileBrowser.vue"), "utf8");
+  const canvasSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetLineageCanvas.vue"), "utf8");
   const graphNodeSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetGraphNode.vue"), "utf8");
+  const stylesSource = readFileSync(path.join(siteRoot, "src", "styles.css"), "utf8");
 
-  assert.match(browserSource, /ParquetGraphNode/);
-  assert.match(browserSource, /class="parquet-graph"/);
+  assert.match(browserSource, /ParquetLineageCanvas/);
+  assert.match(browserSource, /groupParquetLineageGraph/);
+  assert.match(canvasSource, /ParquetGraphNode/);
+  assert.match(canvasSource, /parquet-lineage-toolbar/);
+  assert.match(canvasSource, /@wheel\.prevent="handleWheel"/);
+  assert.match(canvasSource, /zoomIn/);
+  assert.match(canvasSource, /pointerdown/);
+  assert.match(canvasSource, /dragActivationDistance/);
+  assert.match(canvasSource, /@click\.capture="handleGraphClick"/);
+  assert.match(canvasSource, /clearGraphTextSelection/);
+  assert.match(stylesSource, /\.parquet-graph[\s\S]*user-select:\s*none/);
+  assert.match(stylesSource, /\.parquet-graph-node[\s\S]*display:\s*flex/);
+  assert.match(stylesSource, /\.parquet-graph-children[\s\S]*flex-direction:\s*column/);
+  assert.match(stylesSource, /\.parquet-graph-node::before[\s\S]*border-top/);
   assert.match(browserSource, /graph: ParquetFileTreeNode\[\]/);
   assert.doesNotMatch(browserSource, /parquet-graph-card root/);
   assert.match(graphNodeSource, /class="parquet-graph-card"/);
   assert.match(graphNodeSource, /node\.kindLabel/);
+  assert.match(graphNodeSource, /collapsedByDefault/);
   assert.match(appSource, /parquetInspectorOpen/);
   assert.match(appSource, /class="case-modal parquet-inspector-modal"/);
   assert.match(appSource, /v-show="selectedParquetFile && parquetInspectorOpen"/);
   const sectionStart = appSource.indexOf('<section id="parquet-files-section"');
-  const sectionEnd = appSource.indexOf('<section id="latest-run-section"', sectionStart);
+  const trendStart = appSource.indexOf("<TrendPanel");
+  const historyStart = appSource.indexOf('<section id="history-section"', sectionStart);
+  assert.ok(trendStart > -1);
+  assert.ok(sectionStart > trendStart);
+  assert.ok(historyStart > sectionStart);
+  const navTrendStart = appSource.indexOf("handleStickyNavigation('trend-panel-section')");
+  const navParquetStart = appSource.indexOf("handleStickyNavigation('parquet-files-section')");
+  const navArchivedStart = appSource.indexOf("Archived Runs", navParquetStart);
+  assert.ok(navParquetStart > navTrendStart);
+  assert.ok(navArchivedStart > navParquetStart);
+  const sectionEnd = historyStart;
   const parquetSection = appSource.slice(sectionStart, sectionEnd);
   assert.doesNotMatch(parquetSection, /<EmbeddedParquetViewer/);
 });

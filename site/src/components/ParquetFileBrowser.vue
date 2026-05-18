@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
 
-import ParquetGraphNode from "./ParquetGraphNode.vue";
-import { buildParquetFileTree } from "../lib/parquetFiles";
+import ParquetLineageCanvas from "./ParquetLineageCanvas.vue";
+import { buildParquetFileTree, groupParquetLineageGraph } from "../lib/parquetFiles";
 import type { ParquetFileRecord, ParquetFileTreeNode } from "../lib/parquetFiles";
 
 const props = withDefaults(
@@ -12,12 +12,14 @@ const props = withDefaults(
     loading?: boolean;
     error?: string;
     selectedPath?: string;
+    collapseThreshold?: number;
   }>(),
   {
     graph: () => [],
     loading: false,
     error: "",
     selectedPath: "",
+    collapseThreshold: 6,
   },
 );
 
@@ -28,15 +30,18 @@ const emit = defineEmits<{
 
 const openFolders = reactive<Record<string, boolean>>({});
 const tree = computed<ParquetFileTreeNode[]>(() => (props.graph.length ? props.graph : buildParquetFileTree(props.files)));
+const groupedTree = computed<ParquetFileTreeNode[]>(() =>
+  groupParquetLineageGraph(tree.value, { threshold: props.collapseThreshold }),
+);
 const fileCount = computed(() => props.files.length);
 
 watch(
-  tree,
+  groupedTree,
   (nodes) => {
     const visit = (entries: ParquetFileTreeNode[]) => {
       entries.forEach((node) => {
         if (!node.file && openFolders[node.path] === undefined) {
-          openFolders[node.path] = true;
+          openFolders[node.path] = node.collapsedByDefault ? false : true;
         }
         visit(node.children);
       });
@@ -67,20 +72,13 @@ function toggleNode(node: ParquetFileTreeNode): void {
       <button class="inline-button" type="button" @click="emit('retry')">Retry</button>
     </div>
     <div v-else-if="!files.length" class="loader empty-state">No Parquet files are listed in the published manifest.</div>
-    <div v-else class="parquet-graph" role="tree" aria-label="Published Parquet file hierarchy">
-      <div class="parquet-graph-root">
-        <div class="parquet-graph-children root-children" role="group">
-          <ParquetGraphNode
-            v-for="node in tree"
-            :key="node.id"
-            :node="node"
-            :open-folders="openFolders"
-            :selected-path="selectedPath"
-            @select="emit('select', $event)"
-            @toggle="toggleNode"
-          />
-        </div>
-      </div>
-    </div>
+    <ParquetLineageCanvas
+      v-else
+      :graph="groupedTree"
+      :open-folders="openFolders"
+      :selected-path="selectedPath"
+      @select="emit('select', $event)"
+      @toggle="toggleNode"
+    />
   </div>
 </template>

@@ -1344,11 +1344,11 @@ onBeforeUnmount(() => {
         <a class="sticky-link" href="#search-section" @click.prevent="handleStickyNavigation('search-section')">
           Search
         </a>
-        <a class="sticky-link" href="#parquet-files-section" @click.prevent="handleStickyNavigation('parquet-files-section')">
-          Parquet Files
-        </a>
         <a class="sticky-link" href="#trend-panel-section" @click.prevent="handleStickyNavigation('trend-panel-section')">
           Topline Trends
+        </a>
+        <a class="sticky-link" href="#parquet-files-section" @click.prevent="handleStickyNavigation('parquet-files-section')">
+          Parquet Files
         </a>
 
         <div ref="archivedDropdown" class="sticky-dropdown" :class="{ open: archivedMenuOpen }">
@@ -1574,31 +1574,6 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section id="parquet-files-section" class="panel parquet-files-panel section-anchor">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Parquet Files</p>
-              <h2>Data File Inspector</h2>
-            </div>
-            <p class="panel-note">{{ parquetFilesNote }}</p>
-          </div>
-
-          <div v-if="!parquetReportEnabled" class="loader empty-state">
-            Parquet file inspection is available when this report is loaded with Parquet data.
-          </div>
-          <div v-else class="parquet-files-layout">
-            <ParquetFileBrowser
-              :files="parquetFiles"
-              :graph="parquetFileGraph"
-              :loading="parquetFilesLoading"
-              :error="parquetFilesError"
-              :selected-path="selectedParquetFile?.path || ''"
-              @select="selectParquetFile"
-              @retry="loadParquetFiles"
-            />
-          </div>
-        </section>
-
         <section id="latest-run-section" class="panel section-anchor">
           <div class="panel-header">
             <div>
@@ -1652,6 +1627,31 @@ onBeforeUnmount(() => {
         </section>
 
         <TrendPanel ref="trendPanelRef" :index="index" :open="trendPanelOpen" @update:open="trendPanelOpen = $event" />
+
+        <section id="parquet-files-section" class="panel parquet-files-panel section-anchor">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Parquet Files</p>
+              <h2>Data File Inspector</h2>
+            </div>
+            <p class="panel-note">{{ parquetFilesNote }}</p>
+          </div>
+
+          <div v-if="!parquetReportEnabled" class="loader empty-state">
+            Parquet file inspection is available when this report is loaded with Parquet data.
+          </div>
+          <div v-else class="parquet-files-layout">
+            <ParquetFileBrowser
+              :files="parquetFiles"
+              :graph="parquetFileGraph"
+              :loading="parquetFilesLoading"
+              :error="parquetFilesError"
+              :selected-path="selectedParquetFile?.path || ''"
+              @select="selectParquetFile"
+              @retry="loadParquetFiles"
+            />
+          </div>
+        </section>
 
         <section id="history-section" class="panel section-anchor">
           <div class="panel-header">
