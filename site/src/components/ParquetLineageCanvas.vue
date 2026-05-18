@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, nextTick, reactive, ref } from "vue";
 
 import ParquetGraphNode from "./ParquetGraphNode.vue";
+import { fitContentToViewport } from "../lib/graphViewport";
 import type { ParquetFileRecord, ParquetFileTreeNode } from "../lib/parquetFiles";
 
 const props = defineProps<{
@@ -15,12 +16,16 @@ const emit = defineEmits<{
   toggle: [node: ParquetFileTreeNode];
 }>();
 
-const minZoom = 0.45;
+const minZoom = 0.02;
+const fitMinZoom = 0.001;
 const maxZoom = 1.7;
 const zoomStep = 0.14;
 const dragActivationDistance = 4;
+const fitPadding = 24;
 const zoom = ref(0.82);
 const pan = reactive({ x: 0, y: 0 });
+const graphViewport = ref<HTMLElement | null>(null);
+const graphContent = ref<HTMLElement | null>(null);
 const isPointerTracking = ref(false);
 const isPanning = ref(false);
 const suppressNextClick = ref(false);
@@ -30,10 +35,14 @@ const lastPointer = reactive({ x: 0, y: 0 });
 const transformStyle = computed(() => ({
   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom.value})`,
 }));
-const zoomLabel = computed(() => `${Math.round(zoom.value * 100)}%`);
+const zoomLabel = computed(() => {
+  const percent = zoom.value * 100;
+  return percent < 1 ? `${percent.toFixed(1)}%` : `${Math.round(percent)}%`;
+});
 
 function clampZoom(value: number): number {
-  return Math.min(maxZoom, Math.max(minZoom, value));
+  const floor = Math.min(minZoom, zoom.value);
+  return Math.min(maxZoom, Math.max(floor, value));
 }
 
 function zoomAroundPoint(nextZoom: number, x: number, y: number): void {
@@ -56,6 +65,30 @@ function resetView(): void {
   zoom.value = 0.82;
   pan.x = 0;
   pan.y = 0;
+}
+
+async function fitGraphToViewport(): Promise<void> {
+  await nextTick();
+  const viewport = graphViewport.value;
+  const content = graphContent.value;
+  if (!viewport || !content) {
+    resetView();
+    return;
+  }
+
+  const fit = fitContentToViewport({
+    viewportWidth: viewport.clientWidth,
+    viewportHeight: viewport.clientHeight,
+    contentWidth: Math.max(content.scrollWidth, content.offsetWidth),
+    contentHeight: Math.max(content.scrollHeight, content.offsetHeight),
+    minZoom: fitMinZoom,
+    maxZoom,
+    padding: fitPadding,
+  });
+
+  zoom.value = fit.zoom;
+  pan.x = fit.pan.x;
+  pan.y = fit.pan.y;
 }
 
 function handleWheel(event: WheelEvent): void {
@@ -146,11 +179,14 @@ function clearGraphTextSelection(): void {
       <button type="button" aria-label="Zoom out" title="Zoom out" @click="zoomOut">-</button>
       <span class="parquet-lineage-zoom">{{ zoomLabel }}</span>
       <button type="button" aria-label="Zoom in" title="Zoom in" @click="zoomIn">+</button>
-      <button type="button" aria-label="Reset graph view" title="Reset graph view" @click="resetView">Fit</button>
+      <button type="button" aria-label="Fit graph to viewport" title="Fit graph to viewport" @click="fitGraphToViewport">
+        Fit
+      </button>
     </div>
 
     <div
       class="parquet-graph"
+      ref="graphViewport"
       :class="{ 'is-panning': isPanning }"
       role="tree"
       aria-label="Published Parquet file hierarchy"
@@ -162,7 +198,7 @@ function clearGraphTextSelection(): void {
       @pointerleave="stopPanning"
       @click.capture="handleGraphClick"
     >
-      <div class="parquet-graph-transform" :style="transformStyle">
+      <div ref="graphContent" class="parquet-graph-transform" :style="transformStyle">
         <div class="parquet-graph-root">
           <div class="parquet-graph-children root-children" role="group">
             <ParquetGraphNode

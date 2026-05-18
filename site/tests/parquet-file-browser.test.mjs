@@ -14,7 +14,7 @@ const tscBin = path.join(siteRoot, "node_modules", ".bin", process.platform === 
 
 process.on("exit", () => rmSync(outDir, { recursive: true, force: true }));
 
-function compileParquetFiles() {
+function compileLibFiles(files) {
   execFileSync(
     tscBin,
     [
@@ -32,7 +32,7 @@ function compileParquetFiles() {
       "src/lib",
       "--outDir",
       outDir,
-      "src/lib/parquetFiles.ts",
+      ...files,
     ],
     { cwd: siteRoot, stdio: "inherit" },
   );
@@ -44,6 +44,14 @@ function compileParquetFiles() {
       throw error;
     }
   }
+}
+
+function compileParquetFiles() {
+  compileLibFiles(["src/lib/parquetFiles.ts"]);
+}
+
+function compileGraphViewport() {
+  compileLibFiles(["src/lib/graphViewport.ts"]);
 }
 
 test("loads the Parquet file catalog and adds the catalog files to the hierarchy", async () => {
@@ -311,6 +319,41 @@ test("groups dense same-level lineage nodes behind collapsed group cards", () =>
   assert.ok(casesGroup?.children.every((node) => node.kindLabel === "files row"));
 });
 
+test("fits an expanded lineage graph inside the visible canvas", () => {
+  compileGraphViewport();
+  const { fitContentToViewport } = require(path.join(outDir, "graphViewport.js"));
+
+  const fitted = fitContentToViewport({
+    viewportWidth: 900,
+    viewportHeight: 420,
+    contentWidth: 1600,
+    contentHeight: 10000,
+    minZoom: 0.02,
+    maxZoom: 1.7,
+    padding: 32,
+  });
+
+  assert.ok(fitted.zoom < 0.12);
+  assert.ok(fitted.pan.x >= 32);
+  assert.ok(fitted.pan.y >= 32);
+  assert.ok(fitted.pan.x + 1600 * fitted.zoom <= 900 - 32 + 0.001);
+  assert.ok(fitted.pan.y + 10000 * fitted.zoom <= 420 - 32 + 0.001);
+
+  const hugeFitted = fitContentToViewport({
+    viewportWidth: 900,
+    viewportHeight: 420,
+    contentWidth: 1600,
+    contentHeight: 120000,
+    minZoom: 0.001,
+    maxZoom: 1.7,
+    padding: 32,
+  });
+
+  assert.ok(hugeFitted.zoom < 0.005);
+  assert.ok(hugeFitted.pan.x + 1600 * hugeFitted.zoom <= 900 - 32 + 0.001);
+  assert.ok(hugeFitted.pan.y + 120000 * hugeFitted.zoom <= 420 - 32 + 0.001);
+});
+
 test("app source wires a Parquet Files section to an embedded non-iframe viewer", () => {
   const appSource = readFileSync(path.join(siteRoot, "src", "App.vue"), "utf8");
   const browserSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetFileBrowser.vue"), "utf8");
@@ -351,6 +394,12 @@ test("Parquet files render as a left-to-right graph and open a persistent modal 
   assert.match(canvasSource, /parquet-lineage-toolbar/);
   assert.match(canvasSource, /@wheel\.prevent="handleWheel"/);
   assert.match(canvasSource, /zoomIn/);
+  assert.match(canvasSource, /fitContentToViewport/);
+  assert.match(canvasSource, /const fitMinZoom = 0\.001/);
+  assert.match(canvasSource, /minZoom: fitMinZoom/);
+  assert.match(canvasSource, /toFixed\(1\)/);
+  assert.match(canvasSource, /ref="graphViewport"/);
+  assert.match(canvasSource, /ref="graphContent"/);
   assert.match(canvasSource, /pointerdown/);
   assert.match(canvasSource, /dragActivationDistance/);
   assert.match(canvasSource, /@click\.capture="handleGraphClick"/);
