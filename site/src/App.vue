@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import HistoryItem from "./components/HistoryItem.vue";
+import EmbeddedParquetViewer from "./components/EmbeddedParquetViewer.vue";
+import ParquetFileBrowser from "./components/ParquetFileBrowser.vue";
 import RunDetails from "./components/RunDetails.vue";
 import TrendPanel from "./components/TrendPanel.vue";
 import {
@@ -34,6 +36,7 @@ import {
   suiteLabel,
 } from "./lib/report";
 import { fetchParquetLogLines, isParquetReportEnabled } from "./lib/parquetReport";
+import { fetchParquetFileLineage } from "./lib/parquetFiles";
 import { storedCaseSearchResult } from "./lib/caseResult";
 import {
   createPersistentSearchSession,
@@ -55,6 +58,7 @@ import type {
   StoredCaseEntry,
   SuiteRecord,
 } from "./lib/types";
+import type { ParquetFileRecord, ParquetFileTreeNode } from "./lib/parquetFiles";
 import type { ParquetQueryClient } from "./lib/parquetReport";
 import type { ReportDataFetchOptions } from "./lib/report";
 import type { SearchIndexLoadProgress, SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
@@ -129,6 +133,12 @@ const selectedLog = ref<SelectedLogState | null>(null);
 const selectedLogLines = ref<LogLineRecord[]>([]);
 const selectedLogLoading = ref<boolean>(false);
 const selectedLogError = ref<string>("");
+const parquetFiles = ref<ParquetFileRecord[]>([]);
+const parquetFileGraph = ref<ParquetFileTreeNode[]>([]);
+const parquetFilesLoading = ref<boolean>(false);
+const parquetFilesError = ref<string>("");
+const selectedParquetFile = ref<ParquetFileRecord | null>(null);
+const parquetInspectorOpen = ref<boolean>(false);
 const caseSnippet = reactive<CaseSnippetState>({
   loading: false,
   text: "",
@@ -262,6 +272,18 @@ const selectedSearchFields = computed<{ label: string; value: string }[]>(() => 
   ].filter((field) => field.value);
 });
 const selectedLogText = computed<string>(() => selectedLogLines.value.map((line) => line.raw_line).join("\n"));
+const parquetFilesNote = computed<string>(() => {
+  if (!parquetReportEnabled) {
+    return "Available when Parquet report data is enabled.";
+  }
+  if (parquetFilesLoading.value) {
+    return "Loading published Parquet manifest.";
+  }
+  if (parquetFilesError.value) {
+    return "Manifest load failed.";
+  }
+  return `${parquetFiles.value.length.toLocaleString()} published Parquet files`;
+});
 
 const summaryCards = computed<SummaryCard[]>(() => {
   const latest = latestSummary.value;
@@ -377,6 +399,7 @@ async function bootstrap(): Promise<void> {
     const fetchOptions = await reportDataOptions();
     index.value = await fetchReportIndex(reportIndexPath, fetchOptions);
     loading.value = false;
+    void loadParquetFiles();
 
     if (!hasRuns.value) {
       return;
@@ -510,6 +533,56 @@ async function fetchReportSearchIndexPayload(): Promise<SearchIndexPayload> {
   }
 
   return fetchSearchIndexPayload(`${reportDataBaseUrl}search-index.json`);
+}
+
+async function loadParquetFiles(): Promise<void> {
+  if (!parquetReportEnabled || parquetFilesLoading.value) {
+    return;
+  }
+
+  parquetFilesLoading.value = true;
+  parquetFilesError.value = "";
+  try {
+    const fetchOptions = await reportDataOptions();
+    if (!fetchOptions.parquet || !fetchOptions.parquetClient) {
+      throw new Error("Parquet file browsing requires Parquet report data.");
+    }
+    const lineage = await fetchParquetFileLineage(reportDataBaseUrl, fetchOptions.parquetClient);
+    parquetFiles.value = lineage.files;
+    parquetFileGraph.value = lineage.graph;
+    if (selectedParquetFile.value && !parquetFiles.value.some((file) => file.path === selectedParquetFile.value?.path)) {
+      selectedParquetFile.value = null;
+      parquetInspectorOpen.value = false;
+      unlockPageScrollIfNoModal();
+    }
+  } catch (error) {
+    parquetFiles.value = [];
+    parquetFileGraph.value = [];
+    parquetFilesError.value = errorMessageOf(error);
+    selectedParquetFile.value = null;
+    parquetInspectorOpen.value = false;
+    unlockPageScrollIfNoModal();
+  } finally {
+    parquetFilesLoading.value = false;
+  }
+}
+
+function openParquetInspector(): void {
+  if (!selectedParquetFile.value) {
+    return;
+  }
+  parquetInspectorOpen.value = true;
+  lockPageScroll();
+}
+
+function closeParquetInspector(): void {
+  parquetInspectorOpen.value = false;
+  unlockPageScrollIfNoModal();
+}
+
+function selectParquetFile(file: ParquetFileRecord): void {
+  selectedParquetFile.value = file;
+  openParquetInspector();
 }
 
 async function refreshSearchResults(): Promise<void> {
@@ -805,6 +878,13 @@ function unlockPageScroll(): void {
   document.body.classList.remove("modal-open");
 }
 
+function unlockPageScrollIfNoModal(): void {
+  if (selectedSearchResult.value || selectedLog.value || parquetInspectorOpen.value) {
+    return;
+  }
+  unlockPageScroll();
+}
+
 function canScrollElementInDirection(element: HTMLElement, deltaY: number): boolean {
   const maxScrollTop = element.scrollHeight - element.clientHeight;
   if (maxScrollTop <= 1) {
@@ -834,8 +914,7 @@ function modalElementFromEventTarget(target: EventTarget | null): HTMLElement | 
   return null;
 }
 
-function canScrollInsideModal(target: EventTarget | null, deltaY: number): boolean {
-  const backdrop = caseModalBackdrop.value;
+function canScrollInsideModal(backdrop: HTMLElement | null, target: EventTarget | null, deltaY: number): boolean {
   if (!backdrop || deltaY === 0) {
     return false;
   }
@@ -859,7 +938,8 @@ function canScrollInsideModal(target: EventTarget | null, deltaY: number): boole
 }
 
 function preventModalBoundaryOverscroll(event: Event, deltaY: number): void {
-  if (deltaY === 0 || canScrollInsideModal(event.target, deltaY)) {
+  const backdrop = event.currentTarget instanceof HTMLElement ? event.currentTarget : caseModalBackdrop.value;
+  if (deltaY === 0 || canScrollInsideModal(backdrop, event.target, deltaY)) {
     return;
   }
   if (event.cancelable) {
@@ -1003,7 +1083,7 @@ function closeSearchResultModal(options: { syncUrl?: boolean } = {}): void {
   selectedSearchResultOrigin.value = "search";
   snippetRequestSequence += 1;
   resetCaseSnippet();
-  unlockPageScroll();
+  unlockPageScrollIfNoModal();
   if (syncUrl) {
     syncSearchUrl(null);
   }
@@ -1019,7 +1099,7 @@ function closeLogModal(): void {
   selectedLogLoading.value = false;
   selectedLogError.value = "";
   logRequestSequence += 1;
-  unlockPageScroll();
+  unlockPageScrollIfNoModal();
 }
 
 async function openRunLogModal(summary: RunSummary, logFile: LogFileRecord): Promise<void> {
@@ -1201,6 +1281,10 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
       closeSearchResultModal();
       return;
     }
+    if (parquetInspectorOpen.value) {
+      closeParquetInspector();
+      return;
+    }
     closeArchivedMenu();
   }
 }
@@ -1259,6 +1343,9 @@ onBeforeUnmount(() => {
         </a>
         <a class="sticky-link" href="#search-section" @click.prevent="handleStickyNavigation('search-section')">
           Search
+        </a>
+        <a class="sticky-link" href="#parquet-files-section" @click.prevent="handleStickyNavigation('parquet-files-section')">
+          Parquet Files
         </a>
         <a class="sticky-link" href="#trend-panel-section" @click.prevent="handleStickyNavigation('trend-panel-section')">
           Topline Trends
@@ -1487,6 +1574,31 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
+        <section id="parquet-files-section" class="panel parquet-files-panel section-anchor">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Parquet Files</p>
+              <h2>Data File Inspector</h2>
+            </div>
+            <p class="panel-note">{{ parquetFilesNote }}</p>
+          </div>
+
+          <div v-if="!parquetReportEnabled" class="loader empty-state">
+            Parquet file inspection is available when this report is loaded with Parquet data.
+          </div>
+          <div v-else class="parquet-files-layout">
+            <ParquetFileBrowser
+              :files="parquetFiles"
+              :graph="parquetFileGraph"
+              :loading="parquetFilesLoading"
+              :error="parquetFilesError"
+              :selected-path="selectedParquetFile?.path || ''"
+              @select="selectParquetFile"
+              @retry="loadParquetFiles"
+            />
+          </div>
+        </section>
+
         <section id="latest-run-section" class="panel section-anchor">
           <div class="panel-header">
             <div>
@@ -1635,6 +1747,28 @@ onBeforeUnmount(() => {
           </div>
           <pre class="case-code"><code :class="`language-${caseSnippet.language}`" v-html="highlightedSearchSnippet"></code></pre>
         </section>
+      </section>
+    </div>
+
+    <div
+      v-show="selectedParquetFile && parquetInspectorOpen"
+      class="case-modal-backdrop parquet-inspector-backdrop"
+      aria-label="Close Parquet inspector"
+      @click.self="closeParquetInspector"
+      @wheel="handleModalBackdropWheel"
+      @touchstart="handleModalBackdropTouchStart"
+      @touchmove="handleModalBackdropTouchMove"
+    >
+      <section
+        class="case-modal parquet-inspector-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="selectedParquetFile ? `${selectedParquetFile.name} Parquet inspector` : 'Parquet inspector'"
+      >
+        <button class="case-modal-close" type="button" aria-label="Close Parquet inspector" @click="closeParquetInspector">
+          &times;
+        </button>
+        <EmbeddedParquetViewer :file="selectedParquetFile" />
       </section>
     </div>
 

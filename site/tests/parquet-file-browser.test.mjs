@@ -1,0 +1,313 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+
+const siteRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const outDir = mkdtempSync(path.join(os.tmpdir(), "ozone-s3-compatibility-parquet-files-test-"));
+const require = createRequire(import.meta.url);
+const tscBin = path.join(siteRoot, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");
+
+process.on("exit", () => rmSync(outDir, { recursive: true, force: true }));
+
+function compileParquetFiles() {
+  execFileSync(
+    tscBin,
+    [
+      "--target",
+      "ES2022",
+      "--module",
+      "CommonJS",
+      "--moduleResolution",
+      "Node",
+      "--lib",
+      "ES2022,DOM",
+      "--strict",
+      "--skipLibCheck",
+      "--rootDir",
+      "src/lib",
+      "--outDir",
+      outDir,
+      "src/lib/parquetFiles.ts",
+    ],
+    { cwd: siteRoot, stdio: "inherit" },
+  );
+  writeFileSync(path.join(outDir, "package.json"), '{"type":"commonjs"}\n', "utf8");
+  try {
+    symlinkSync(path.join(siteRoot, "node_modules"), path.join(outDir, "node_modules"), "junction");
+  } catch (error) {
+    if (error.code !== "EEXIST") {
+      throw error;
+    }
+  }
+}
+
+test("loads the Parquet file catalog and adds the catalog files to the hierarchy", async () => {
+  compileParquetFiles();
+  const { buildParquetFileTree, fetchParquetFileCatalog } = require(path.join(outDir, "parquetFiles.js"));
+  const requests = [];
+  const client = {
+    async queryRows(filePath, sql) {
+      requests.push({ filePath, sql });
+      return [
+        {
+          run_id: "run-a",
+          path: "runs/run-a/metadata.parquet",
+          kind: "metadata",
+          suite_key: "",
+          log_source: "",
+          row_count: 1,
+          byte_size: 1234,
+          content_hash: "abc",
+          schema_version: 1,
+        },
+        {
+          run_id: "run-a",
+          path: "runs/run-a/cases-s3-tests.parquet",
+          kind: "cases",
+          suite_key: "s3_tests",
+          log_source: "",
+          row_count: 2,
+          byte_size: 2345,
+          content_hash: "def",
+          schema_version: 1,
+        },
+        {
+          run_id: "",
+          path: "search/index.parquet",
+          kind: "search_index",
+          suite_key: "",
+          log_source: "",
+          row_count: 3,
+          byte_size: 3456,
+          content_hash: "ghi",
+          schema_version: 1,
+        },
+      ];
+    },
+  };
+
+  const files = await fetchParquetFileCatalog("./data/", client);
+
+  assert.deepEqual(requests, [
+    {
+      filePath: "./data/catalog/files.parquet",
+      sql: "SELECT * FROM read_parquet(__PARQUET_FILE__) ORDER BY path",
+    },
+  ]);
+  assert.equal(files.find((file) => file.path === "runs/run-a/metadata.parquet")?.url, "./data/runs/run-a/metadata.parquet");
+  assert.ok(files.some((file) => file.path === "catalog/files.parquet" && file.synthetic));
+  assert.ok(files.some((file) => file.path === "catalog/runs.parquet" && file.synthetic));
+
+  const tree = buildParquetFileTree(files);
+  assert.deepEqual(
+    tree.map((node) => node.label),
+    ["catalog", "runs", "search"],
+  );
+  const runsNode = tree.find((node) => node.label === "runs");
+  const runNode = runsNode?.children.find((node) => node.label === "run-a");
+  assert.deepEqual(
+    runNode?.children.map((node) => node.label),
+    ["cases-s3-tests.parquet", "metadata.parquet"],
+  );
+});
+
+test("builds a catalog-first lineage graph from catalog rows to data files", () => {
+  compileParquetFiles();
+  const { buildParquetCatalogLineageGraph, normalizeParquetFileCatalogRows } = require(path.join(outDir, "parquetFiles.js"));
+  const files = normalizeParquetFileCatalogRows(
+    [
+      {
+        run_id: "run-a",
+        path: "runs/run-a/metadata.parquet",
+        kind: "metadata",
+        suite_key: "",
+        log_source: "",
+        row_count: 1,
+        byte_size: 1234,
+        content_hash: "abc",
+        schema_version: 1,
+      },
+      {
+        run_id: "run-a",
+        path: "runs/run-a/suites.parquet",
+        kind: "suites",
+        suite_key: "",
+        log_source: "",
+        row_count: 1,
+        byte_size: 2234,
+        content_hash: "suite",
+        schema_version: 1,
+      },
+      {
+        run_id: "run-a",
+        path: "runs/run-a/features.parquet",
+        kind: "features",
+        suite_key: "",
+        log_source: "",
+        row_count: 1,
+        byte_size: 3234,
+        content_hash: "feature",
+        schema_version: 1,
+      },
+      {
+        run_id: "run-a",
+        path: "runs/run-a/cases-s3-tests.parquet",
+        kind: "cases",
+        suite_key: "s3_tests",
+        log_source: "",
+        row_count: 2,
+        byte_size: 2345,
+        content_hash: "def",
+        schema_version: 1,
+      },
+      {
+        run_id: "",
+        path: "search/index.parquet",
+        kind: "search_index",
+        suite_key: "",
+        log_source: "",
+        row_count: 3,
+        byte_size: 3456,
+        content_hash: "ghi",
+        schema_version: 1,
+      },
+    ],
+    "./data/",
+  );
+
+  const graph = buildParquetCatalogLineageGraph(files, {
+    runs: [{ run_id: "run-a", status: "completed", started_at: 1778984100000 }],
+    suites: [{ run_id: "run-a", suite_key: "s3_tests", label: "s3-tests", status: "completed" }],
+    features: [{ run_id: "run-a", suite_key: "s3_tests", name: "bucket_listing", label: "Bucket listing" }],
+  });
+
+  assert.deepEqual(
+    graph.map((node) => node.path),
+    ["catalog/files.parquet", "catalog/runs.parquet", "catalog/suites.parquet", "catalog/features.parquet"],
+  );
+  const filesCatalog = graph.find((node) => node.path === "catalog/files.parquet");
+  assert.equal(filesCatalog?.kindLabel, "catalog file");
+  assert.ok(filesCatalog?.file);
+  const manifestRow = filesCatalog?.children.find((node) => node.label === "runs/run-a/metadata.parquet");
+  assert.equal(manifestRow?.kindLabel, "files row");
+  assert.equal(manifestRow?.children[0]?.file?.path, "runs/run-a/metadata.parquet");
+
+  const runRow = graph
+    .find((node) => node.path === "catalog/runs.parquet")
+    ?.children.find((node) => node.label === "run-a");
+  assert.deepEqual(runRow?.metaLabels, ["completed", "2026-05-17T02:15:00.000Z"]);
+  assert.deepEqual(
+    runRow?.children.map((node) => node.file?.path),
+    [
+      "runs/run-a/cases-s3-tests.parquet",
+      "runs/run-a/features.parquet",
+      "runs/run-a/metadata.parquet",
+      "runs/run-a/suites.parquet",
+    ],
+  );
+
+  const suiteRow = graph
+    .find((node) => node.path === "catalog/suites.parquet")
+    ?.children.find((node) => node.label === "run-a / s3-tests");
+  assert.deepEqual(
+    suiteRow?.children.map((node) => node.file?.path),
+    ["runs/run-a/cases-s3-tests.parquet", "runs/run-a/suites.parquet"],
+  );
+
+  const featureRow = graph
+    .find((node) => node.path === "catalog/features.parquet")
+    ?.children.find((node) => node.label === "run-a / s3_tests / Bucket listing");
+  assert.deepEqual(
+    featureRow?.children.map((node) => node.file?.path),
+    ["runs/run-a/features.parquet"],
+  );
+});
+
+test("loads catalog row lineage with the Parquet file graph", async () => {
+  compileParquetFiles();
+  const { fetchParquetFileLineage } = require(path.join(outDir, "parquetFiles.js"));
+  const requests = [];
+  const client = {
+    async queryRows(filePath, sql) {
+      requests.push({ filePath, sql });
+      if (filePath.endsWith("catalog/files.parquet")) {
+        return [
+          {
+            run_id: "run-a",
+            path: "runs/run-a/metadata.parquet",
+            kind: "metadata",
+            suite_key: "",
+            log_source: "",
+            row_count: 1,
+            byte_size: 1234,
+            content_hash: "abc",
+            schema_version: 1,
+          },
+        ];
+      }
+      if (filePath.endsWith("catalog/runs.parquet")) {
+        return [{ run_id: "run-a", status: "completed", started_at: "2026-05-17T02:15:00Z" }];
+      }
+      if (filePath.endsWith("catalog/suites.parquet")) {
+        return [{ run_id: "run-a", suite_key: "s3_tests", label: "s3-tests", status: "completed" }];
+      }
+      if (filePath.endsWith("catalog/features.parquet")) {
+        return [{ run_id: "run-a", suite_key: "s3_tests", name: "bucket_listing", label: "Bucket listing" }];
+      }
+      return [];
+    },
+  };
+
+  const lineage = await fetchParquetFileLineage("./data/", client);
+
+  assert.deepEqual(
+    requests.map((request) => request.filePath),
+    [
+      "./data/catalog/files.parquet",
+      "./data/catalog/runs.parquet",
+      "./data/catalog/suites.parquet",
+      "./data/catalog/features.parquet",
+    ],
+  );
+  assert.ok(lineage.files.some((file) => file.path === "runs/run-a/metadata.parquet"));
+  assert.ok(lineage.graph.some((node) => node.path === "catalog/runs.parquet"));
+});
+
+test("app source wires a Parquet Files section to an embedded non-iframe viewer", () => {
+  const appSource = readFileSync(path.join(siteRoot, "src", "App.vue"), "utf8");
+  const browserSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetFileBrowser.vue"), "utf8");
+  const viewerSource = readFileSync(path.join(siteRoot, "src", "components", "EmbeddedParquetViewer.vue"), "utf8");
+
+  assert.match(appSource, /ParquetFileBrowser/);
+  assert.match(appSource, /fetchParquetFileLineage/);
+  assert.match(appSource, /id="parquet-files-section"/);
+  assert.match(browserSource, /defineEmits<\{[\s\S]*select: \[file: ParquetFileRecord\];[\s\S]*\}>/);
+  assert.match(viewerSource, /PARQUET_VIEWER_SCRIPT/);
+  assert.match(viewerSource, /restoreHostPageLocation/);
+  assert.doesNotMatch(viewerSource, /<iframe/i);
+});
+
+test("Parquet files render as a top-down graph and open a persistent modal inspector", () => {
+  const appSource = readFileSync(path.join(siteRoot, "src", "App.vue"), "utf8");
+  const browserSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetFileBrowser.vue"), "utf8");
+  const graphNodeSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetGraphNode.vue"), "utf8");
+
+  assert.match(browserSource, /ParquetGraphNode/);
+  assert.match(browserSource, /class="parquet-graph"/);
+  assert.match(browserSource, /graph: ParquetFileTreeNode\[\]/);
+  assert.doesNotMatch(browserSource, /parquet-graph-card root/);
+  assert.match(graphNodeSource, /class="parquet-graph-card"/);
+  assert.match(graphNodeSource, /node\.kindLabel/);
+  assert.match(appSource, /parquetInspectorOpen/);
+  assert.match(appSource, /class="case-modal parquet-inspector-modal"/);
+  assert.match(appSource, /v-show="selectedParquetFile && parquetInspectorOpen"/);
+  const sectionStart = appSource.indexOf('<section id="parquet-files-section"');
+  const sectionEnd = appSource.indexOf('<section id="latest-run-section"', sectionStart);
+  const parquetSection = appSource.slice(sectionStart, sectionEnd);
+  assert.doesNotMatch(parquetSection, /<EmbeddedParquetViewer/);
+});

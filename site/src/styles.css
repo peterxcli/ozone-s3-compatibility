@@ -439,6 +439,232 @@ code,
   overflow-wrap: anywhere;
 }
 
+.parquet-files-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 1280px) {
+  .parquet-files-panel {
+    width: min(1480px, calc(100vw - 2rem));
+    margin-left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
+.parquet-files-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.parquet-browser,
+.embedded-parquet-viewer {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+}
+
+.parquet-browser-head,
+.embedded-parquet-viewer-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.parquet-browser-head h3,
+.embedded-parquet-viewer-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.parquet-graph {
+  overflow: auto;
+  padding: 0.9rem 0.9rem 1.1rem;
+  border: 1px solid rgba(13, 127, 171, 0.1);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.86), rgba(255, 255, 255, 0.96));
+}
+
+.parquet-graph-root,
+.parquet-graph-node {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  min-width: max-content;
+}
+
+.parquet-graph-card {
+  appearance: none;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+  min-width: 11.5rem;
+  max-width: 18rem;
+  min-height: 5.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.98);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  box-shadow: 0 10px 28px rgba(16, 45, 76, 0.06);
+}
+
+.parquet-graph-card.root {
+  min-width: 16rem;
+  cursor: default;
+}
+
+.parquet-graph-card:hover,
+.parquet-graph-card:focus-visible,
+.parquet-graph-node.selected > .parquet-graph-card {
+  border-color: rgba(13, 127, 171, 0.34);
+  background: rgba(13, 127, 171, 0.07);
+  box-shadow: 0 12px 32px rgba(13, 127, 171, 0.12);
+}
+
+.parquet-graph-node.folder > .parquet-graph-card {
+  background: rgba(248, 251, 255, 0.98);
+}
+
+.parquet-node-kind {
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.parquet-node-name {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.parquet-node-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.parquet-node-meta .pill {
+  min-height: 1.5rem;
+  padding: 0.16rem 0.46rem;
+  font-size: 0.7rem;
+}
+
+.parquet-graph-children {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  min-width: max-content;
+  padding-top: 1.65rem;
+  margin-top: 0.9rem;
+}
+
+.parquet-graph-children.root-children {
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.parquet-graph-children::before {
+  content: "";
+  position: absolute;
+  top: 0.8rem;
+  left: 5.75rem;
+  right: 5.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.parquet-graph-children.root-children::before,
+.parquet-graph-children.root-children > .parquet-graph-node::before {
+  display: none;
+}
+
+.parquet-graph-node::before {
+  content: "";
+  position: absolute;
+  top: -0.85rem;
+  left: 50%;
+  height: 0.85rem;
+  border-left: 1px solid var(--line);
+}
+
+.parquet-graph-root > .parquet-graph-card::after,
+.parquet-graph-node.open > .parquet-graph-card::after {
+  content: "";
+  position: absolute;
+  bottom: -0.9rem;
+  left: 50%;
+  height: 0.9rem;
+  border-left: 1px solid var(--line);
+}
+
+.parquet-graph-node.file > .parquet-graph-card::after {
+  display: none;
+}
+
+.parquet-graph-node.file > .parquet-graph-card {
+  min-height: 5.25rem;
+}
+
+.embedded-parquet-viewer-shell {
+  position: relative;
+  min-height: min(46rem, 78vh);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.embedded-parquet-viewer-root {
+  min-height: min(46rem, 78vh);
+  min-width: 68rem;
+}
+
+.embedded-parquet-viewer-root > div {
+  min-height: min(46rem, 78vh);
+}
+
+.embedded-viewer-status {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  max-width: min(32rem, calc(100% - 1.5rem));
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgba(13, 127, 171, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  box-shadow: 0 8px 24px rgba(16, 45, 76, 0.1);
+}
+
+.embedded-viewer-status.error {
+  border-color: rgba(210, 73, 58, 0.26);
+  color: var(--bad);
+}
+
 .feature-rollup-chip {
   display: inline-flex;
   align-items: center;
@@ -1421,6 +1647,23 @@ th {
   width: min(1120px, 100%);
 }
 
+.parquet-inspector-modal {
+  width: min(1320px, 100%);
+  min-height: min(58rem, calc(100vh - 2rem));
+}
+
+.parquet-inspector-modal .embedded-parquet-viewer {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.parquet-inspector-modal .embedded-parquet-viewer-shell,
+.parquet-inspector-modal .embedded-parquet-viewer-root,
+.parquet-inspector-modal .embedded-parquet-viewer-root > div {
+  min-height: min(48rem, calc(100vh - 10rem));
+}
+
 .log-detail-text {
   max-height: min(65vh, 40rem);
   white-space: pre;
@@ -1485,7 +1728,8 @@ a:hover {
   }
 
   .hero,
-  .chart-grid {
+  .chart-grid,
+  .parquet-files-layout {
     grid-template-columns: 1fr;
   }
 
