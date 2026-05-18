@@ -11,11 +11,21 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
     <link rel="preload" as="script" href="./assets/parquet-viewer-dxh4a536bbbd247c221.js" crossorigin />
     <script>
-      window.history.replaceState(null, "", "/" + window.location.search + window.location.hash);
+      (() => {
+        const params = new URLSearchParams(window.location.search);
+        const parquetUrl = params.get("url");
+        if (parquetUrl) {
+          window.__ozoneStandaloneParquetUrl = parquetUrl;
+          params.delete("url");
+        }
+        const query = params.toString();
+        window.history.replaceState(null, "", "/" + (query ? `?${query}` : "") + window.location.hash);
+      })();
     </script>
   </head>
   <body>
     <div id="main"></div>
     <script type="module" async src="./assets/parquet-viewer-dxh4a536bbbd247c221.js"></script>
+    <script src="./parquet-viewer-url-loader.js"></script>
   </body>
 </html>

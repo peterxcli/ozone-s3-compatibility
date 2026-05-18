@@ -315,6 +315,8 @@ test("app source wires a Parquet Files section to an embedded non-iframe viewer"
   const appSource = readFileSync(path.join(siteRoot, "src", "App.vue"), "utf8");
   const browserSource = readFileSync(path.join(siteRoot, "src", "components", "ParquetFileBrowser.vue"), "utf8");
   const viewerSource = readFileSync(path.join(siteRoot, "src", "components", "EmbeddedParquetViewer.vue"), "utf8");
+  const standaloneSource = readFileSync(path.join(siteRoot, "public", "parquet-viewer.html"), "utf8");
+  const standaloneLoaderSource = readFileSync(path.join(siteRoot, "public", "parquet-viewer-url-loader.js"), "utf8");
 
   assert.match(appSource, /ParquetFileBrowser/);
   assert.match(appSource, /fetchParquetFileLineage/);
@@ -322,6 +324,17 @@ test("app source wires a Parquet Files section to an embedded non-iframe viewer"
   assert.match(browserSource, /defineEmits<\{[\s\S]*select: \[file: ParquetFileRecord\];[\s\S]*\}>/);
   assert.match(viewerSource, /PARQUET_VIEWER_SCRIPT/);
   assert.match(viewerSource, /restoreHostPageLocation/);
+  assert.match(viewerSource, /downloadParquetFileForViewer/);
+  assert.match(viewerSource, /submitFileToViewer/);
+  assert.match(viewerSource, /DataTransfer/);
+  assert.match(viewerSource, /dispatchEvent\(new Event\("change"/);
+  assert.match(viewerSource, /captureHostPageState/);
+  assert.match(viewerSource, /window\.scrollTo/);
+  assert.match(standaloneSource, /__ozoneStandaloneParquetUrl/);
+  assert.match(standaloneSource, /parquet-viewer-url-loader\.js/);
+  assert.match(standaloneLoaderSource, /loadStandaloneParquetUrlAsFile/);
+  assert.match(standaloneLoaderSource, /DataTransfer/);
+  assert.match(standaloneLoaderSource, /dispatchEvent\(new Event\("change"/);
   assert.doesNotMatch(viewerSource, /<iframe/i);
 });
 

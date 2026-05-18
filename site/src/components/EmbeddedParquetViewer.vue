@@ -26,6 +26,12 @@ const lastSubmittedUrl = ref<string>("");
 
 const standaloneUrl = computed(() => (props.file ? parquetViewerStandaloneUrl(props.file.url) : ""));
 
+interface HostPageState {
+  location: string;
+  scrollX: number;
+  scrollY: number;
+}
+
 function errorMessageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -121,8 +127,24 @@ function dispatchSubmit(form: HTMLFormElement): void {
   form.dispatchEvent(event);
 }
 
+function dispatchFileInputValue(input: HTMLInputElement, file: File): void {
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 function hostPageLocation(): string {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function captureHostPageState(): HostPageState {
+  return {
+    location: hostPageLocation(),
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+  };
 }
 
 function restoreHostPageLocation(location: string): void {
@@ -131,10 +153,43 @@ function restoreHostPageLocation(location: string): void {
   }
 }
 
-function scheduleHostPageLocationRestore(location: string): void {
+function restoreHostPageState(state: HostPageState): void {
+  restoreHostPageLocation(state.location);
+  if (window.scrollX !== state.scrollX || window.scrollY !== state.scrollY) {
+    window.scrollTo({ left: state.scrollX, top: state.scrollY, behavior: "instant" });
+  }
+}
+
+function scheduleHostPageStateRestore(state: HostPageState): void {
   [0, 100, 500, 1500].forEach((delayMs) => {
-    window.setTimeout(() => restoreHostPageLocation(location), delayMs);
+    window.setTimeout(() => restoreHostPageState(state), delayMs);
   });
+}
+
+async function downloadParquetFileForViewer(file: ParquetFileRecord, url: string): Promise<File> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Could not download ${file.name}: HTTP ${response.status}`);
+  }
+  const blob = await response.blob();
+  return new File([blob], file.name || "file.parquet", {
+    type: blob.type || "application/octet-stream",
+  });
+}
+
+async function submitFileToViewer(file: File): Promise<void> {
+  const root = await ensureViewerReady();
+  const fileTab = buttonWithText(root, "From file");
+  if (fileTab) {
+    fileTab.click();
+  }
+
+  const input = await waitFor(
+    () => root.querySelector<HTMLInputElement>('input[type="file"]'),
+    FORM_READY_TIMEOUT_MS,
+    "Parquet viewer file input did not become available.",
+  );
+  dispatchFileInputValue(input, file);
 }
 
 async function submitUrlToViewer(url: string): Promise<void> {
@@ -168,18 +223,20 @@ async function loadSelectedFile(file: ParquetFileRecord | null): Promise<void> {
   if (absoluteUrl === lastSubmittedUrl.value && loadState.value === "ready") {
     return;
   }
-  const hostLocation = hostPageLocation();
+  const hostState = captureHostPageState();
 
   loadState.value = "loading";
   errorMessage.value = "";
   try {
-    await submitUrlToViewer(absoluteUrl);
+    const viewerFile = await downloadParquetFileForViewer(file, absoluteUrl);
+    await submitFileToViewer(viewerFile);
+    lastSubmittedUrl.value = absoluteUrl;
     loadState.value = "ready";
   } catch (error) {
     loadState.value = "error";
     errorMessage.value = errorMessageOf(error);
   } finally {
-    scheduleHostPageLocationRestore(hostLocation);
+    scheduleHostPageStateRestore(hostState);
   }
 }
 
