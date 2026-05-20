@@ -1,4 +1,5 @@
 .pages-repo/
+.superpowers/
 .work/
 .venv/
 __pycache__/
