@@ -77,11 +77,18 @@ wait_for_warp_s3() {
   local probe_log
   local benchdata
   local exit_code
+  local command_timeout
+  local -a timeout_prefix
   if [[ ! -x "${WARP_BINARY}" ]]; then
     benchmark_log "Warp binary is not executable: ${WARP_BINARY}"
     return 1
   fi
   started="$(date +%s)"
+  command_timeout="${WARP_S3_PROBE_COMMAND_TIMEOUT:-30s}"
+  timeout_prefix=()
+  if command -v timeout >/dev/null 2>&1; then
+    timeout_prefix=(timeout "${command_timeout}")
+  fi
   probe_dir="${RUNNER_TEMP:-/tmp}/warp-s3-readiness"
   mkdir -p "${probe_dir}"
   probe_log="${probe_dir}/${bucket}.log"
@@ -89,7 +96,7 @@ wait_for_warp_s3() {
   while true; do
     rm -f "${probe_log}" "${benchdata}"
     set +e
-    "${WARP_BINARY}" put \
+    "${timeout_prefix[@]}" "${WARP_BINARY}" put \
       --host="${address}" \
       --access-key="${access_key}" \
       --secret-key="${secret_key}" \
