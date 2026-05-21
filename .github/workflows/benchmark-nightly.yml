@@ -227,14 +227,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          rm -rf .pages-repo
-          git init .pages-repo
-          git -C .pages-repo checkout -b gh-pages
-          git -C .pages-repo remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          rsync -a --delete out/pages/ .pages-repo/
-          touch .pages-repo/.nojekyll
-          git -C .pages-repo config user.name "github-actions[bot]"
-          git -C .pages-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C .pages-repo add .
-          git -C .pages-repo commit -m "Publish Warp benchmark report"
-          git -C .pages-repo push --force origin gh-pages
+          pages_repo="${RUNNER_TEMP}/pages-repo"
+          rm -rf "${pages_repo}"
+          git init "${pages_repo}"
+          git -C "${pages_repo}" checkout -b gh-pages
+          git -C "${pages_repo}" remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          rsync -a --delete out/pages/ "${pages_repo}/"
+          touch "${pages_repo}/.nojekyll"
+          git -C "${pages_repo}" config user.name "github-actions[bot]"
+          git -C "${pages_repo}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${pages_repo}" add .
+          git -C "${pages_repo}" commit -m "Publish Warp benchmark report"
+          git -C "${pages_repo}" push --force origin gh-pages
