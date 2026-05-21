@@ -3,832 +3,142 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import re
 import shutil
-from collections import defaultdict
 from datetime import UTC, datetime
-from html import escape
 from pathlib import Path
 from typing import Any
 
-from normalize_run import normalize_mint_suite, normalize_s3_suite, overall_status
-from parquet_run import read_run_dataset, write_pages_parquet_dataset
-
-DEFAULT_S3_TESTS_ARGS = "s3tests/functional"
-INDEX_RUN_CHUNK_SIZE = 10
-SEARCH_INDEX_ROW_CHUNK_SIZE = 5000
+try:
+    from scripts.benchmark_parquet import read_benchmark_dataset, write_benchmark_dataset
+except ModuleNotFoundError:
+    from benchmark_parquet import read_benchmark_dataset, write_benchmark_dataset
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build static Pages output")
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build static Warp benchmark Pages output")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--new-run", required=True)
     parser.add_argument("--existing-runs-dir", default="")
-    parser.add_argument("--data-format", choices=["both", "parquet"], default="both")
-    return parser.parse_args()
+    parser.add_argument("--data-format", choices=["parquet", "both"], default="parquet")
+    return parser.parse_args(argv)
 
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def default_sources() -> dict[str, dict[str, str]]:
-    return {
-        "ozone": {
-            "repo": "https://github.com/apache/ozone.git",
-            "ref": "unknown",
-            "commit": "unknown",
-            "short_commit": "unknown",
-        },
-        "s3_tests": {
-            "repo": "https://github.com/ceph/s3-tests.git",
-            "ref": "unknown",
-            "commit": "unknown",
-            "short_commit": "unknown",
-        },
-        "mint": {
-            "repo": "https://github.com/minio/mint.git",
-            "ref": "unknown",
-            "commit": "unknown",
-            "short_commit": "unknown",
-        },
-    }
-
-
-def format_timestamp(epoch_seconds: float) -> str:
-    return datetime.fromtimestamp(epoch_seconds, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def run_id_from_timestamp(timestamp: str) -> str:
-    return timestamp.replace(":", "-")
-
-
-def artifact_file_times(raw_root: Path) -> tuple[str, str]:
-    file_paths = [path for path in raw_root.rglob("*") if path.is_file() and path.name != ".DS_Store"]
-    if not file_paths:
-        now = format_timestamp(datetime.now(UTC).timestamp())
-        return now, now
-
-    started_at = format_timestamp(min(path.stat().st_mtime for path in file_paths))
-    finished_at = format_timestamp(max(path.stat().st_mtime for path in file_paths))
-    return started_at, finished_at
-
-
-def infer_build_exit(raw_root: Path) -> int:
-    build_log = raw_root / "ozone" / "build.log"
-    if not build_log.exists():
-        return 1
-    return 0 if "BUILD SUCCESS" in build_log.read_text(encoding="utf-8", errors="replace") else 1
-
-
-def infer_cluster_exit(raw_root: Path) -> int:
-    start_log = raw_root / "ozone" / "start.log"
-    if not start_log.exists():
-        return 1
-    text = start_log.read_text(encoding="utf-8", errors="replace")
-    if "SCM is out of safe mode." in text or "No OM HA service, no need to wait" in text:
-        return 0
-    return 1
-
-
-def infer_mint_mode(console_log: Path) -> str:
-    if not console_log.exists():
-        return "unknown"
-    match = re.search(r"^MINT_MODE:\s+(.+)$", console_log.read_text(encoding="utf-8", errors="replace"), re.MULTILINE)
-    return match.group(1).strip() if match else "unknown"
-
-
-def infer_mint_targets(console_log: Path) -> str:
-    if not console_log.exists():
-        return ""
-    targets: list[str] = []
-    for line in console_log.read_text(encoding="utf-8", errors="replace").splitlines():
-        match = re.search(r"^\(\d+/\d+\) Running ([A-Za-z0-9._+-]+) tests \.\.\.", line)
-        if match:
-            targets.append(match.group(1))
-    return " ".join(targets)
-
-
-def recover_run_from_artifact(run_path: Path) -> dict[str, Any]:
-    raw_root = run_path / "raw" if (run_path / "raw").is_dir() else run_path
-    started_at, finished_at = artifact_file_times(raw_root)
-    run_id = run_id_from_timestamp(finished_at)
-
-    console_log = raw_root / "mint" / "console.log"
-    mint_log = raw_root / "mint" / "log" / "log.json"
-    junit_path = raw_root / "s3-tests" / "junit.xml"
-
-    recovered_args = argparse.Namespace(
-        out="",
-        run_id=run_id,
-        started_at=started_at,
-        finished_at=finished_at,
-        workflow_run_url="",
-        build_exit=infer_build_exit(raw_root),
-        cluster_exit=infer_cluster_exit(raw_root),
-        ozone_repo="https://github.com/apache/ozone.git",
-        ozone_ref="unknown",
-        ozone_commit="unknown",
-        s3_tests_repo="https://github.com/ceph/s3-tests.git",
-        s3_tests_ref="unknown",
-        s3_tests_commit="unknown",
-        s3_tests_source=str(run_path / "_missing_s3_tests_source"),
-        s3_tests_junit=str(junit_path),
-        s3_tests_exit=0 if junit_path.exists() else 1,
-        s3_tests_args="s3tests/functional",
-        mint_repo="https://github.com/minio/mint.git",
-        mint_ref="unknown",
-        mint_commit="unknown",
-        mint_log=str(mint_log),
-        mint_console=str(console_log),
-        mint_exit=0 if mint_log.exists() else 1,
-        mint_mode=infer_mint_mode(console_log),
-        mint_targets=infer_mint_targets(console_log),
-        ozone_datanodes="unknown",
-    )
-
-    suites = {
-        "s3_tests": normalize_s3_suite(recovered_args),
-        "mint": normalize_mint_suite(recovered_args),
-    }
-
-    mint_summary = suites["mint"]["summary"]
-    if mint_summary["failed"] or mint_summary["errored"]:
-        suites["mint"]["exit_code"] = 1
-        recovered_args.mint_exit = 1
-
-    return {
-        "schema_version": 1,
-        "run_id": recovered_args.run_id,
-        "started_at": recovered_args.started_at,
-        "finished_at": recovered_args.finished_at,
-        "status": overall_status(recovered_args.build_exit, recovered_args.cluster_exit, suites),
-        "rate_formula": "compatibility_rate = passed / (passed + failed + errored); skipped and NA are excluded",
-        "workflow_run_url": "",
-        "orchestration": {
-            "build_exit_code": recovered_args.build_exit,
-            "cluster_exit_code": recovered_args.cluster_exit,
-        },
-        "execution": {
-            "s3_tests_args": recovered_args.s3_tests_args,
-            "mint_mode": recovered_args.mint_mode,
-            "mint_targets": [target for target in recovered_args.mint_targets.split() if target],
-            "ozone_datanodes": recovered_args.ozone_datanodes,
-            "recovered_from_raw_artifact": True,
-        },
-        "sources": default_sources(),
-        "suites": suites,
-    }
-
-
-def load_or_recover_run(path: Path) -> dict[str, Any]:
+def load_run(path: Path) -> dict[str, Any]:
     if path.is_file():
         return load_json(path)
     if path.is_dir():
-        direct_run = path / "run.json"
-        if direct_run.exists():
-            return load_json(direct_run)
-        if (path / "metadata.parquet").exists():
-            return read_run_dataset(path)
-        return recover_run_from_artifact(path)
+        run_json = path / "run.json"
+        if run_json.exists():
+            return load_json(run_json)
+        metadata = path / "metadata.parquet"
+        if metadata.exists():
+            return read_benchmark_dataset(path)
     raise FileNotFoundError(path)
 
 
-def raw_root_for_run_path(path: Path) -> Path | None:
-    if not path.is_dir():
-        return None
-    raw_path = path / "raw"
-    if raw_path.is_dir():
-        return raw_path
-    return path
-
-
-def summarize_run(run: dict[str, Any], file_name: str) -> dict[str, Any]:
-    suites: dict[str, Any] = {}
-    for suite_key, suite in run["suites"].items():
-        suites[suite_key] = {
-            "label": suite["label"],
-            "status": suite["status"],
-            "summary": suite["summary"],
-            "feature_summaries": suite["feature_summaries"],
-        }
-    return {
-        "id": run["run_id"],
-        "status": run["status"],
-        "started_at": run["started_at"],
-        "finished_at": run["finished_at"],
-        "workflow_run_url": run.get("workflow_run_url", ""),
-        "execution": run.get("execution"),
-        "file": f"data/runs/{file_name}",
-        "sources": run["sources"],
-        "suites": suites,
-    }
-
-
-def build_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
-    summaries = [summarize_run(run, f"{run['run_id']}.json") for run in runs]
-    summaries.sort(key=lambda item: item["started_at"], reverse=True)
-
-    overall: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    features: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
-
-    for summary in sorted(summaries, key=lambda item: item["started_at"]):
-        for suite_key, suite in summary["suites"].items():
-            overall[suite_key].append(
-                {
-                    "run_id": summary["id"],
-                    "started_at": summary["started_at"],
-                    "rate": suite["summary"]["compatibility_rate"],
-                    "eligible": suite["summary"]["eligible"],
-                }
-            )
-            for feature in suite["feature_summaries"]:
-                features[suite_key][feature["name"]].append(
-                    {
-                        "run_id": summary["id"],
-                        "started_at": summary["started_at"],
-                        "rate": feature["summary"]["compatibility_rate"],
-                        "eligible": feature["summary"]["eligible"],
-                        "passed": feature["summary"]["passed"],
-                        "failed": feature["summary"]["failed"],
-                        "errored": feature["summary"]["errored"],
-                        "skipped": feature["summary"]["skipped"],
-                    }
-                )
-
-    return {
-        "generated_at": summaries[0]["finished_at"] if summaries else "",
-        "rate_formula": "compatibility_rate = passed / (passed + failed + errored); skipped and NA are excluded",
-        "suite_order": ["s3_tests", "mint"],
-        "runs": summaries,
-        "charts": {
-            "overall": overall,
-            "features": {suite: dict(feature_map) for suite, feature_map in features.items()},
-        },
-    }
-
-
-def partition_index_payload(
-    index_payload: dict[str, Any],
-    run_chunk_size: int = INDEX_RUN_CHUNK_SIZE,
-) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    if run_chunk_size <= 0:
-        raise ValueError("run_chunk_size must be greater than zero")
-
-    shards: dict[str, dict[str, Any]] = {}
-    run_paths: list[str] = []
-    runs = index_payload.get("runs", [])
-    for chunk_index, offset in enumerate(range(0, len(runs), run_chunk_size)):
-        path = f"index/runs-{chunk_index:03d}.json"
-        run_paths.append(path)
-        shards[path] = {"runs": runs[offset : offset + run_chunk_size]}
-
-    charts = index_payload.get("charts", {})
-    overall_path = "index/charts-overall.json"
-    shards[overall_path] = {"overall": charts.get("overall", {})}
-
-    feature_paths: dict[str, str] = {}
-    feature_charts = charts.get("features", {})
-    for suite_key in index_payload.get("suite_order", []):
-        if suite_key not in feature_charts:
-            continue
-        path = f"index/charts-features-{suite_key}.json"
-        feature_paths[suite_key] = path
-        shards[path] = {
-            "suite": suite_key,
-            "features": feature_charts.get(suite_key, {}),
-        }
-
-    manifest = {
-        "schema_version": 2,
-        "partitioned": True,
-        "generated_at": index_payload.get("generated_at", ""),
-        "rate_formula": index_payload.get("rate_formula", ""),
-        "suite_order": index_payload.get("suite_order", []),
-        "run_count": len(runs),
-        "partitions": {
-            "runs": run_paths,
-            "charts_overall": overall_path,
-            "charts_features": feature_paths,
-        },
-    }
-
-    return manifest, shards
-
-
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=False) + "\n", encoding="utf-8")
-
-
-def write_partitioned_index(index_payload: dict[str, Any], data_dir: Path) -> None:
-    manifest, shards = partition_index_payload(index_payload)
-    for relative_path, shard_payload in shards.items():
-        write_json(data_dir / relative_path, shard_payload)
-    write_json(data_dir / "index.json", manifest)
-
-
-def partition_search_index_payload(
-    search_payload: dict[str, Any],
-    row_chunk_size: int = SEARCH_INDEX_ROW_CHUNK_SIZE,
-) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    if row_chunk_size <= 0:
-        raise ValueError("row_chunk_size must be greater than zero")
-
-    shards: dict[str, dict[str, Any]] = {}
-    row_paths: list[str] = []
-    rows = search_payload.get("rows", [])
-    for chunk_index, offset in enumerate(range(0, len(rows), row_chunk_size)):
-        path = f"search/rows-{chunk_index:03d}.json"
-        row_paths.append(path)
-        shards[path] = {"rows": rows[offset : offset + row_chunk_size]}
-
-    manifest = {
-        "schema_version": 2,
-        "partitioned": True,
-        "generated_at": search_payload.get("generated_at", ""),
-        "index_id": search_payload.get("index_id", ""),
-        "row_count": len(rows),
-        "partitions": {
-            "rows": row_paths,
-        },
-    }
-
-    return manifest, shards
-
-
-def write_partitioned_search_index(search_payload: dict[str, Any], data_dir: Path) -> None:
-    manifest, shards = partition_search_index_payload(search_payload)
-    for relative_path, shard_payload in shards.items():
-        write_json(data_dir / relative_path, shard_payload)
-    write_json(data_dir / "search-index.json", manifest)
-
-
-def search_text(*values: Any) -> str:
-    parts: list[str] = []
-    for value in values:
-        if value is None:
-            continue
-        if isinstance(value, list):
-            parts.extend(str(item) for item in value if item)
-        else:
-            text = str(value)
-            if text:
-                parts.append(text)
-    return " ".join(parts)
-
-
-def search_variants(value: Any) -> str:
-    text = search_text(value)
-    if not text:
-        return ""
-    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
-    spaced = re.sub(r"[_/.-]+", " ", spaced)
-    return search_text(text, spaced)
-
-
-def case_source_ref(source: dict[str, Any]) -> str:
-    commit = str(source.get("commit") or "")
-    if commit and commit != "unknown":
-        return commit
-    return str(source.get("ref") or "")
-
-
-def strip_test_params(name: str) -> str:
-    return name.strip().split("[", 1)[0]
-
-
-def s3_source_path(classname: str) -> str:
-    if not classname:
-        return ""
-    return f"{classname.replace('.', '/')}.py"
-
-
-def fallback_source_snippet(suite_key: str, suite_label: str, case: dict[str, Any]) -> str:
-    test_name = str(case.get("name") or "").strip()
-    classname = str(case.get("classname") or "").strip()
-    if suite_key == "mint":
-        lines = [
-            "# Mint test case",
-            f"target={classname}" if classname else "",
-            f"function={test_name}" if test_name else "",
-        ]
-        return "\n".join(line for line in lines if line)
-    return f"# {suite_label} test case\n{test_name}".strip()
-
-
-def case_source_info(run: dict[str, Any], suite_key: str, suite_label: str, case: dict[str, Any]) -> dict[str, str]:
-    test_name = str(case.get("name") or "").strip()
-    classname = str(case.get("classname") or "").strip()
-    sources = run.get("sources", {})
-    source = sources.get(suite_key, {}) if isinstance(sources, dict) else {}
-
-    if suite_key == "s3_tests":
-        return {
-            "sourceLanguage": "python",
-            "sourcePath": s3_source_path(classname),
-            "sourceSymbol": strip_test_params(test_name),
-            "sourceRef": case_source_ref(source),
-            "sourceRepo": str(source.get("repo") or ""),
-            "sourceSnippet": "",
-        }
-
-    return {
-        "sourceLanguage": "shell" if suite_key == "mint" else "text",
-        "sourcePath": "",
-        "sourceSymbol": strip_test_params(test_name),
-        "sourceRef": case_source_ref(source),
-        "sourceRepo": str(source.get("repo") or ""),
-        "sourceSnippet": fallback_source_snippet(suite_key, suite_label, case),
-    }
-
-
-def case_search_text(row: dict[str, Any]) -> str:
-    return search_text(
-        search_variants(row["suiteKey"]),
-        search_variants(row["suiteLabel"]),
-        search_variants(row["testName"]),
-        search_variants(row["classname"]),
-        search_variants(row["status"]),
-        search_variants(row["features"]),
-        search_variants(row["message"]),
-        search_variants(row["detail"]),
-        search_variants(row["runId"]),
-        search_variants(row["runStartedAt"]),
-        search_variants(row["runFinishedAt"]),
-        search_variants(row["runFile"]),
-        search_variants(row["sourcePath"]),
-        search_variants(row["sourceSymbol"]),
-    )
-
-
-def string_field(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def build_search_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
-    sorted_runs = sorted(runs, key=lambda item: item.get("started_at", ""), reverse=True)
-    rows: list[dict[str, Any]] = []
-
-    for run_ordinal, run in enumerate(sorted_runs):
-        run_id = str(run.get("run_id") or run.get("id") or "")
-        run_started_at = str(run.get("started_at") or "")
-        run_finished_at = str(run.get("finished_at") or run_started_at)
-        run_file = f"data/runs/{run_id}.json"
-        is_latest_run = run_ordinal == 0
-
-        for suite_key, suite in run.get("suites", {}).items():
-            suite_label = str(suite.get("label") or suite_key.replace("_", "-"))
-            cases = suite.get("cases") or suite.get("non_passing_cases") or []
-            for case in cases:
-                row = {
-                    "id": len(rows) + 1,
-                    "suiteKey": suite_key,
-                    "suiteLabel": suite_label,
-                    "testName": string_field(case.get("name")),
-                    "classname": string_field(case.get("classname")),
-                    "status": string_field(case.get("status") or "unknown"),
-                    "features": [str(feature).strip() for feature in case.get("features", []) if str(feature).strip()],
-                    "message": string_field(case.get("message")),
-                    "detail": string_field(case.get("detail")),
-                    "runId": run_id,
-                    "runStartedAt": run_started_at,
-                    "runFinishedAt": run_finished_at,
-                    "runFile": run_file,
-                    "isLatestRun": is_latest_run,
-                    "runOrdinal": run_ordinal,
-                    **case_source_info(run, suite_key, suite_label, case),
-                }
-                row["searchText"] = case_search_text(row)
-                rows.append(row)
-
-    generated_at = ""
-    if sorted_runs:
-        generated_at = sorted_runs[0].get("finished_at") or sorted_runs[0].get("started_at") or ""
-    index_hash = hashlib.sha256(
-        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()[:16]
-
-    return {
-        "schema_version": 1,
-        "generated_at": generated_at,
-        "index_id": f"{generated_at}-{len(rows)}-{index_hash}",
-        "row_count": len(rows),
-        "rows": rows,
-    }
-
-
-def format_preview_timestamp(value: str) -> str:
-    moment = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
-    hour = moment.hour % 12 or 12
-    meridiem = "AM" if moment.hour < 12 else "PM"
-    return f"{moment.strftime('%b')} {moment.day}, {moment.year}, {hour}:{moment.strftime('%M')} {meridiem} UTC"
-
-
-def format_percent(rate: float | None) -> str:
-    if rate is None:
-        return "—"
-    return f"{rate * 100:.1f}%"
-
-
-def execution_scope(execution: dict[str, Any] | None) -> tuple[str, str]:
-    if not execution:
-        return "unknown", "Run inputs unavailable"
-
-    mint_targets = execution.get("mint_targets", [])
-    if isinstance(mint_targets, str):
-        mint_targets = [target for target in mint_targets.split() if target]
-
-    s3_tests_args = execution.get("s3_tests_args") or DEFAULT_S3_TESTS_ARGS
-    if s3_tests_args != DEFAULT_S3_TESTS_ARGS or mint_targets:
-        return "subset", "Subset run"
-
-    return "full", "Full nightly"
-
-
-def pill_width(label: str, minimum: int = 112) -> int:
-    return max(minimum, 36 + len(label) * 9)
-
-
-def delta_text_and_fill(delta: float | None, rate: float | None) -> tuple[str, str]:
-    if rate is None:
-        return "No eligible cases", "#60758e"
-    if delta is None:
-        return "No previous data", "#60758e"
-    if delta >= 0:
-        return f"+{delta * 100:.1f} pts vs previous", "#0f9d71"
-    return f"{delta * 100:.1f} pts vs previous", "#d2493a"
-
-
-def suite_delta(runs: list[dict[str, Any]], suite_key: str) -> float | None:
-    if len(runs) < 2:
-        return None
-
-    latest_suite = runs[0]["suites"].get(suite_key)
-    if not latest_suite:
-        return None
-
-    latest_rate = latest_suite["summary"].get("compatibility_rate")
-    if latest_rate is None:
-        return None
-
-    for previous in runs[1:]:
-        previous_suite = previous["suites"].get(suite_key)
-        if not previous_suite:
-            continue
-        previous_rate = previous_suite["summary"].get("compatibility_rate")
-        if previous_rate is not None:
-            return latest_rate - previous_rate
-
-    return None
-
-
-def status_colors(status: str) -> tuple[str, str, str]:
-    if status == "completed":
-        return "#0f9d71", "#0f9d71", "0.10"
-    if status == "partial":
-        return "#ff8a3d", "#ff8a3d", "0.12"
-    if status in {"build_failed", "cluster_failed"}:
-        return "#d2493a", "#d2493a", "0.12"
-    return "#60758e", "#60758e", "0.10"
-
-
-def scope_colors(kind: str) -> tuple[str, str, str]:
-    if kind == "full":
-        return "#0f9d71", "#0f9d71", "0.10"
-    if kind == "subset":
-        return "#ff8a3d", "#ff8a3d", "0.12"
-    return "#60758e", "#60758e", "0.10"
-
-
-def render_suite_card(run: dict[str, Any], runs: list[dict[str, Any]], suite_key: str, x: int, y: int) -> str:
-    suite = run["suites"].get(suite_key, {})
-    summary = suite.get("summary", {})
-    delta = suite_delta(runs, suite_key)
-    delta_text, delta_fill = delta_text_and_fill(delta, summary.get("compatibility_rate"))
-    failed_or_errored = summary.get("failed", 0) + summary.get("errored", 0)
-    label = escape((suite.get("label") or suite_key).upper())
-
-    return f"""
-    <g transform="translate({x} {y})">
-      <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
-      <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">{label}</text>
-      <text x="24" y="86" font-size="22" font-weight="700">{summary.get("eligible", 0)} eligible cases</text>
-      <text x="24" y="152" font-size="58" font-weight="500">{escape(format_percent(summary.get("compatibility_rate")))}</text>
-      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">{summary.get("passed", 0)} passed, {failed_or_errored} failed/error, {summary.get("skipped", 0)} skipped</text>
-      <text x="24" y="216" font-size="18" font-weight="800" fill="{delta_fill}">{escape(delta_text)}</text>
-    </g>"""
-
-
-def write_social_preview(index_payload: dict[str, Any], output_path: Path) -> None:
-    runs = index_payload.get("runs", [])
-    if not runs:
-        return
-
-    latest = runs[0]
-    execution = latest.get("execution")
-    scope_kind, scope_label = execution_scope(execution)
-    scope_fill, scope_stroke, scope_bg_opacity = scope_colors(scope_kind)
-    status_fill, status_stroke, status_bg_opacity = status_colors(latest.get("status", ""))
-    scope_width = pill_width(scope_label, minimum=128)
-    status_label = (latest.get("status") or "unknown").replace("_", " ")
-    status_width = pill_width(status_label)
-    latest_time = format_preview_timestamp(latest.get("finished_at") or latest["started_at"])
-    ozone_commit = latest.get("sources", {}).get("ozone", {}).get("short_commit", "unknown")
-    title = "Apache Ozone S3 Compatibility"
-    description = (
-        "Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, "
-        f"latest run {latest_time}."
-    )
-
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
-  <title id="title">{escape(title)}</title>
-  <desc id="desc">{escape(description)}</desc>
-
-  <defs>
-    <linearGradient id="page" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#f8fbff" />
-      <stop offset="100%" stop-color="#f4f7fb" />
-    </linearGradient>
-    <radialGradient id="glowBlue" cx="18%" cy="18%" r="45%">
-      <stop offset="0%" stop-color="#0d7fab" stop-opacity="0.16" />
-      <stop offset="100%" stop-color="#0d7fab" stop-opacity="0" />
-    </radialGradient>
-    <radialGradient id="glowWarm" cx="86%" cy="14%" r="38%">
-      <stop offset="0%" stop-color="#ff8a3d" stop-opacity="0.18" />
-      <stop offset="100%" stop-color="#ff8a3d" stop-opacity="0" />
-    </radialGradient>
-    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.96" />
-      <stop offset="100%" stop-color="#f7faff" stop-opacity="0.88" />
-    </linearGradient>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#102d4c" flood-opacity="0.10" />
-    </filter>
-  </defs>
-
-  <rect width="1200" height="630" fill="url(#page)" />
-  <rect width="1200" height="630" fill="url(#glowBlue)" />
-  <rect width="1200" height="630" fill="url(#glowWarm)" />
-
-  <g filter="url(#shadow)">
-    <rect x="28" y="24" width="1144" height="582" rx="36" fill="#ffffff" fill-opacity="0.86" stroke="#ffffff" stroke-opacity="0.75" />
-  </g>
-
-  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#12263f">
-    <text x="60" y="78" font-size="15" font-weight="800" letter-spacing="3" fill="#0b6286">NIGHTLY GITHUB PAGES REPORT</text>
-
-    <text x="60" y="152" font-size="72" font-weight="800">Apache Ozone</text>
-    <text x="60" y="228" font-size="72" font-weight="800">S3</text>
-    <text x="60" y="304" font-size="72" font-weight="800">Compatibility</text>
-
-    <text x="60" y="368" font-size="20" font-weight="500" fill="#60758e">Tracks daily compatibility against ceph/s3-tests</text>
-    <text x="60" y="400" font-size="20" font-weight="500" fill="#60758e">and minio/mint from a fresh Ozone build and packaged cluster.</text>
-  </g>
-
-  <g font-family="'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="600">
-    <g transform="translate(60 456)">
-      <rect width="308" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">{escape(latest_time)}</text>
-    </g>
-    <g transform="translate(382 456)">
-      <rect width="184" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">Ozone {escape(ozone_commit)}</text>
-    </g>
-  </g>
-
-  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="700">
-    <g transform="translate(580 456)">
-      <rect width="{scope_width}" height="40" rx="20" fill="{scope_fill}" fill-opacity="{scope_bg_opacity}" stroke="{scope_stroke}" stroke-opacity="0.24" />
-      <text x="20" y="26" fill="{scope_fill}">{escape(scope_label)}</text>
-    </g>
-    <g transform="translate(60 510)">
-      <rect width="{status_width}" height="40" rx="20" fill="{status_fill}" fill-opacity="{status_bg_opacity}" stroke="{status_stroke}" stroke-opacity="0.24" />
-      <text x="20" y="26" fill="{status_fill}">{escape(status_label)}</text>
-    </g>
-  </g>
-
-  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#12263f">
-{render_suite_card(latest, runs, "s3_tests", 690, 62)}
-{render_suite_card(latest, runs, "mint", 690, 342)}
-  </g>
-</svg>
-"""
-
-    output_path.write_text(svg + "\n", encoding="utf-8")
-
-
-def copy_tree(source: Path, target: Path) -> None:
-    for file_path in source.rglob("*"):
-        if file_path.is_dir():
-            continue
-        rel = file_path.relative_to(source)
-        destination = target / rel
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(file_path, destination)
-
-
-def load_existing_runs(existing_runs_dir: Path | None, output_runs_dir: Path) -> list[dict[str, Any]]:
-    if not existing_runs_dir or not existing_runs_dir.exists():
+def load_existing_runs(path_text: str) -> list[dict[str, Any]]:
+    if not path_text:
         return []
-
+    root = Path(path_text)
+    if not root.exists():
+        return []
     runs: list[dict[str, Any]] = []
-    seen_run_ids: set[str] = set()
-
-    for run_file in sorted(existing_runs_dir.glob("*.json")):
-        run = load_json(run_file)
-        run_id = string_field(run.get("run_id") or run.get("id"))
-        if not run_id or run_id in seen_run_ids:
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
             continue
-        shutil.copy2(run_file, output_runs_dir / run_file.name)
-        runs.append(run)
-        seen_run_ids.add(run_id)
-
-    for run_dir in sorted(path for path in existing_runs_dir.iterdir() if path.is_dir()):
-        if not (run_dir / "metadata.parquet").exists():
+        try:
+            runs.append(load_run(child))
+        except FileNotFoundError:
             continue
-        run = read_run_dataset(run_dir)
-        run_id = string_field(run.get("run_id") or run.get("id"))
-        if not run_id or run_id in seen_run_ids:
-            continue
-        copy_tree(run_dir, output_runs_dir / run_dir.name)
-        runs.append(run)
-        seen_run_ids.add(run_id)
-
     return runs
 
 
-def remove_json_report_data(data_dir: Path) -> None:
-    for path in [
-        data_dir / "index.json",
-        data_dir / "search-index.json",
-    ]:
-        if path.exists():
-            path.unlink()
-    for path in [
-        data_dir / "index",
-    ]:
-        if path.exists():
-            shutil.rmtree(path)
-    search_dir = data_dir / "search"
-    if search_dir.exists():
-        for path in search_dir.rglob("*.json"):
-            path.unlink()
-        for path in sorted((path for path in search_dir.rglob("*") if path.is_dir()), reverse=True):
-            if not any(path.iterdir()):
-                path.rmdir()
-        if not any(search_dir.iterdir()):
-            search_dir.rmdir()
-    for run_file in (data_dir / "runs").glob("*.json"):
-        run_file.unlink()
+def unique_runs(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        run_id = str(run.get("run_id") or "")
+        if not run_id:
+            continue
+        by_id[run_id] = run
+    return sorted(by_id.values(), key=lambda item: str(item.get("started_at") or ""), reverse=True)
 
 
-def built_site_dir() -> Path:
-    site_dist = Path(__file__).resolve().parent.parent / "site" / "dist"
-    if site_dist.is_dir():
-        return site_dist
-    raise FileNotFoundError(
-        f"Missing built frontend at {site_dist}. Run `npm --prefix site ci && npm --prefix site run build` first."
+def copy_tree_contents(source: Path, destination: Path) -> None:
+    if not source.exists():
+        return
+    for child in source.iterdir():
+        target = destination / child.name
+        if child.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(child, target)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(child, target)
+
+
+def write_fallback_index(output_dir: Path) -> None:
+    index_path = output_dir / "index.html"
+    if index_path.exists():
+        return
+    index_path.write_text(
+        """<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Warp S3 Benchmark Report</title>
+  </head>
+  <body>
+    <div id="app">Warp S3 Benchmark Report</div>
+  </body>
+</html>
+""",
+        encoding="utf-8",
     )
 
 
-def main() -> None:
-    args = parse_args()
-    output_dir = Path(args.output_dir)
-    site_dir = built_site_dir()
-    new_run_path = Path(args.new_run)
-    existing_runs_dir = Path(args.existing_runs_dir) if args.existing_runs_dir else None
+def write_bootstrap(data_dir: Path, runs: list[dict[str, Any]]) -> None:
+    latest = runs[0] if runs else {}
+    payload = {
+        "schema_version": 1,
+        "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "run_count": len(runs),
+        "latest_run_id": latest.get("run_id", ""),
+        "data_format": "parquet",
+    }
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "index.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
+
+def build_pages(*, output_dir: Path, new_run_path: Path, existing_runs_dir: str = "") -> None:
     if output_dir.exists():
         shutil.rmtree(output_dir)
-    (output_dir / "data" / "runs").mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True)
 
+    repo_root = Path(__file__).resolve().parents[1]
+    copy_tree_contents(repo_root / "site" / "dist", output_dir)
+    copy_tree_contents(repo_root / "site" / "public", output_dir)
+    write_fallback_index(output_dir)
+
+    runs = unique_runs([load_run(new_run_path), *load_existing_runs(existing_runs_dir)])
     data_dir = output_dir / "data"
-    runs_dir = data_dir / "runs"
-    existing_runs = load_existing_runs(existing_runs_dir, runs_dir)
+    write_benchmark_dataset(runs, data_dir)
+    write_bootstrap(data_dir, runs)
 
-    new_run = load_or_recover_run(new_run_path)
-    if args.data_format == "both":
-        current_run_file = runs_dir / f"{new_run['run_id']}.json"
-        current_run_file.write_text(json.dumps(new_run, indent=2, sort_keys=False) + "\n", encoding="utf-8")
 
-    runs_by_id = {string_field(run.get("run_id") or run.get("id")): run for run in existing_runs}
-    runs_by_id[string_field(new_run.get("run_id") or new_run.get("id"))] = new_run
-    runs = sorted(runs_by_id.values(), key=lambda run: string_field(run.get("started_at")))
-    index_payload = build_index(runs)
-    write_partitioned_index(index_payload, data_dir)
-    write_partitioned_search_index(build_search_index(runs), data_dir)
-    raw_root = raw_root_for_run_path(new_run_path)
-    raw_roots = {new_run["run_id"]: raw_root} if raw_root else {}
-    write_pages_parquet_dataset(runs, data_dir, raw_roots)
-    if args.data_format == "parquet":
-        remove_json_report_data(data_dir)
-
-    copy_tree(site_dir, output_dir)
-    write_social_preview(index_payload, output_dir / "social-preview.svg")
-    (output_dir / ".nojekyll").write_text("", encoding="utf-8")
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    build_pages(
+        output_dir=Path(args.output_dir),
+        new_run_path=Path(args.new_run),
+        existing_runs_dir=args.existing_runs_dir,
+    )
 
 
 if __name__ == "__main__":

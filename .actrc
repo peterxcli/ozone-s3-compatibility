@@ -1,4 +1,0 @@
---bind
---env ACT=true
--P ubuntu-latest=ozone-s3-compatibility/act-runner:latest
--P ubuntu-24.04=ozone-s3-compatibility/act-runner:latest

@@ -1,0 +1,218 @@
+name: warp-s3-benchmarks
+
+on:
+  schedule:
+    - cron: "15 2 * * *"
+  workflow_dispatch:
+    inputs:
+      publish_pages:
+        description: "Push the generated benchmark report to gh-pages"
+        required: false
+        default: false
+        type: boolean
+      providers:
+        description: "Providers to run, space separated. Empty runs all."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: warp-s3-benchmarks-pages
+  cancel-in-progress: false
+
+env:
+  PUBLISH_PAGES: ${{ github.event_name == 'schedule' || github.event.inputs.publish_pages == true || github.event.inputs.publish_pages == 'true' || inputs.publish_pages == true || inputs.publish_pages == 'true' || false }}
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [rustfs, seaweedfs, ceph, ozone]
+    steps:
+      - name: Check provider filter
+        id: filter
+        shell: bash
+        env:
+          REQUESTED_PROVIDERS: ${{ github.event.inputs.providers || '' }}
+          PROVIDER: ${{ matrix.provider }}
+        run: |
+          set -euo pipefail
+          if [ -z "${REQUESTED_PROVIDERS}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          elif printf ' %s ' "${REQUESTED_PROVIDERS}" | grep -q " ${PROVIDER} "; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Checkout repository
+        if: ${{ steps.filter.outputs.enabled == 'true' }}
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Update Warp submodule to latest upstream
+        if: ${{ steps.filter.outputs.enabled == 'true' }}
+        run: git submodule update --init --recursive --remote warp
+
+      - name: Set up Go
+        if: ${{ steps.filter.outputs.enabled == 'true' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Set up Python
+        if: ${{ steps.filter.outputs.enabled == 'true' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        if: ${{ steps.filter.outputs.enabled == 'true' }}
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install dependencies
+        if: ${{ steps.filter.outputs.enabled == 'true' }}
+        run: |
+          set -euo pipefail
+          uv sync --locked
+          sudo apt-get update
+          sudo apt-get install -y jq
+          docker compose version || docker-compose --version
+
+      - name: Build Warp
+        if: ${{ steps.filter.outputs.enabled == 'true' }}
+        run: go -C warp build -o warp .
+
+      - name: Run provider benchmark
+        if: ${{ steps.filter.outputs.enabled == 'true' }}
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          OUTPUT_ROOT: ${{ github.workspace }}/out/providers/${{ matrix.provider }}
+        run: bash scripts/run-benchmark-provider.sh "${PROVIDER}"
+
+      - name: Upload provider artifact
+        if: ${{ always() && steps.filter.outputs.enabled == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: warp-provider-${{ matrix.provider }}
+          path: out/providers/${{ matrix.provider }}
+          if-no-files-found: warn
+
+  aggregate-pages:
+    runs-on: ubuntu-latest
+    needs: benchmark
+    if: ${{ always() }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Update Warp submodule to latest upstream
+        run: git submodule update --init --recursive --remote warp
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Download provider artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: warp-provider-*
+          path: out/provider-artifacts
+          merge-multiple: false
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          uv sync --locked
+          npm --prefix site ci
+          go -C warp build -o warp .
+
+      - name: Normalize benchmark run
+        env:
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          provider_args=()
+          while IFS= read -r metadata; do
+            provider_args+=(--provider-dir "$(dirname "${metadata}")")
+          done < <(find out/provider-artifacts -name metadata.json -print | sort)
+          if [ "${#provider_args[@]}" -eq 0 ]; then
+            echo "No provider artifacts found" >&2
+            exit 1
+          fi
+          finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          runner_json="$(source scripts/benchmark/common.sh; write_runner_json)"
+          uv run python scripts/normalize_benchmark.py \
+            "${provider_args[@]}" \
+            --out out/run/run.json \
+            --run-id "${finished_at//:/-}" \
+            --started-at "${finished_at}" \
+            --finished-at "${finished_at}" \
+            --workflow-run-url "${WORKFLOW_RUN_URL}" \
+            --warp-repo "https://github.com/minio/warp" \
+            --warp-commit "$(git -C warp rev-parse HEAD)" \
+            --warp-version "$(./warp/warp --version 2>/dev/null || true)" \
+            --runner-json "${runner_json}"
+
+      - name: Build benchmark site
+        run: |
+          set -euo pipefail
+          npm --prefix site run build
+          uv run python scripts/build_pages.py \
+            --output-dir out/pages \
+            --new-run out/run/run.json \
+            --data-format parquet
+
+      - name: Upload benchmark report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: warp-benchmark-report
+          path: |
+            out/run
+            out/pages
+          if-no-files-found: error
+
+      - name: Publish gh-pages
+        if: ${{ env.PUBLISH_PAGES == 'true' && hashFiles('out/pages/index.html') != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf .pages-repo
+          git init .pages-repo
+          git -C .pages-repo checkout -b gh-pages
+          git -C .pages-repo remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          rsync -a --delete out/pages/ .pages-repo/
+          touch .pages-repo/.nojekyll
+          git -C .pages-repo config user.name "github-actions[bot]"
+          git -C .pages-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .pages-repo add .
+          git -C .pages-repo commit -m "Publish Warp benchmark report"
+          git -C .pages-repo push --force origin gh-pages

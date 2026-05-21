@@ -3,17 +3,6 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
-name = "ozone-s3-compatibility"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "pyarrow" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pyarrow", specifier = ">=24.0.0" }]
-
-[[package]]
 name = "pyarrow"
 version = "24.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -62,3 +51,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/76/97/ff71431000a75d84135a1ace5ca4ba11726a231a8007bbb320a4c54075d5/pyarrow-24.0.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:61a3d7eaa97a14768b542f3d284dc6400dd2470d9f080708b13cd46b6ae18136", size = 51932250, upload-time = "2026-04-21T10:51:10.576Z" },
     { url = "https://files.pythonhosted.org/packages/51/be/6f79d55816d5c22557cf27533543d5d70dfe692adfbee4b99f2760674f38/pyarrow-24.0.0-cp314-cp314t-win_amd64.whl", hash = "sha256:c91d00057f23b8d353039520dc3a6c09d8608164c692e9f59a175a42b2ae0c19", size = 28131282, upload-time = "2026-04-21T10:51:16.815Z" },
 ]
+
+[[package]]
+name = "warp-s3-benchmark"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyarrow", specifier = ">=24.0.0" }]

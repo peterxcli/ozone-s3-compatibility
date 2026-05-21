@@ -56,7 +56,7 @@ export class DuckDbParquetQueryClient implements ParquetQueryClient {
     this.cacheMode = options.cacheMode || "direct";
   }
 
-  async queryRows<T extends Record<string, unknown>>(filePath: string, sql: string): Promise<T[]> {
+  async queryRows<T extends object>(filePath: string, sql: string): Promise<T[]> {
     const connection = await this.connection();
     const alias = await this.registerFile(filePath);
     const query = sql.replaceAll(PARQUET_FILE_REF, sqlString(alias));

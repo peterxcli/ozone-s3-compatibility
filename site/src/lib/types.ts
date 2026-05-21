@@ -1,218 +1,138 @@
-export interface SummaryMetrics {
-  compatibility_rate: number | null;
-  eligible: number;
-  passed: number;
-  failed: number;
-  errored: number;
-  skipped: number;
-}
-
-export interface FeatureSummaryRecord {
-  name: string;
-  label: string;
-  summary: SummaryMetrics;
-}
-
-export interface StoredCaseEntry {
-  name: string;
-  status: string;
-  features?: string[];
-  classname?: string;
-  duration_ms?: number | null;
-  message?: string;
-  detail?: string;
-}
-
-export interface LogFileRecord {
+export interface BenchmarkRunSummary {
+  id: string;
   run_id: string;
+  started_at: string;
+  finished_at: string;
+  status: string;
+  workflow_run_url: string;
+  warp_commit: string;
+  provider_count: number;
+  profile_count: number;
+  result_count: number;
+  detail_base_url: string;
+  warp: Record<string, unknown>;
+  runner: Record<string, unknown>;
+}
+
+export interface BenchmarkIndex {
+  generated_at: string;
+  runs: BenchmarkRunSummary[];
+}
+
+export interface BenchmarkProvider {
+  run_id?: string;
+  provider: string;
+  label: string;
+  image?: string;
+  image_tag?: string;
+  image_digest?: string;
+  endpoint?: string;
+  adapter_status?: string;
+  startup_seconds?: number;
+  log_file?: string;
+}
+
+export interface BenchmarkProfile {
+  run_id?: string;
+  profile_id: string;
+  workload: string;
+  operation?: string;
+  object_size?: string;
+  concurrency?: number;
+  prefix_mode?: string;
+  duration_seconds?: number;
+}
+
+export interface BenchmarkResult {
+  run_id?: string;
+  provider: string;
+  profile_id: string;
+  workload: string;
+  operation: string;
+  status?: string;
+  exit_code?: number;
+  throughput_mib_per_sec?: number | null;
+  ops_per_sec?: number | null;
+  objects_per_sec?: number | null;
+  errors?: number;
+  duration_seconds?: number;
+  benchdata?: string;
+  analyze_out?: string;
+  analyze_text?: string;
+}
+
+export interface BenchmarkTimeseriesPoint {
+  run_id?: string;
+  provider: string;
+  profile_id: string;
+  workload: string;
+  operation: string;
+  segment_index: number;
+  host?: string;
+  duration_seconds?: number;
+  bytes?: number;
+  ops_ended?: number;
+  errors?: number;
+  mb_per_sec?: number | null;
+  ops_per_sec?: number | null;
+  objects_per_sec?: number | null;
+  start_time?: string;
+  end_time?: string;
+}
+
+export interface BenchmarkCommand {
+  run_id?: string;
+  provider: string;
+  profile_id: string;
+  command: string[];
+  exit_code: number;
+}
+
+export interface BenchmarkArtifact {
+  run_id?: string;
+  provider: string;
+  profile_id: string;
+  kind: string;
+  path: string;
+}
+
+export interface BenchmarkLogFile {
+  run_id?: string;
+  provider: string;
   log_source: string;
   log_file: string;
   path: string;
-  line_count: number;
+  line_count?: number;
 }
 
-export interface LogLineRecord {
+export interface BenchmarkLogLine {
   run_id?: string;
+  provider?: string;
   log_source?: string;
   log_file?: string;
   line_number: number;
-  timestamp?: string;
   level?: string;
-  case_id?: string;
-  component?: string;
-  thread?: string;
-  logger?: string;
   message?: string;
-  raw_line: string;
-  event_id?: string;
-  exception_class?: string;
-  stacktrace_id?: string;
+  raw_line?: string;
 }
 
-export type FeatureComparisonDirection = "improved" | "regressed" | "flat" | "unknown";
-
-export interface CaseStatusChange {
-  key: string;
-  name: string;
-  classname: string;
-  fromStatus: string;
-  toStatus: string;
-}
-
-export interface FeatureComparison {
-  previousRate: number | null;
-  delta: number | null;
-  direction: FeatureComparisonDirection;
-  nowPassing: CaseStatusChange[];
-  noLongerPassing: CaseStatusChange[];
-}
-
-export interface FeatureComparisonSummary {
-  improved: number;
-  regressed: number;
-  flat: number;
-  comparable: number;
-}
-
-export interface SuiteRecord {
-  label: string;
-  status: string;
-  summary: SummaryMetrics;
-  feature_summaries: FeatureSummaryRecord[];
-  included_case_strategy?: string;
-  cases?: StoredCaseEntry[];
-  non_passing_cases?: StoredCaseEntry[];
-  exit_code?: number;
-}
-
-export interface SourceRecord {
-  repo: string;
-  ref?: string;
-  commit?: string;
-  short_commit?: string;
-}
-
-export interface SourcesMap {
-  ozone: SourceRecord;
-  s3_tests: SourceRecord;
-  mint: SourceRecord;
-  [key: string]: SourceRecord;
-}
-
-export interface ExecutionInput {
-  s3_tests_args?: string;
-  mint_mode?: string;
-  mint_targets?: string[] | string;
-  ozone_datanodes?: string | number;
-  [key: string]: unknown;
-}
-
-export interface NormalizedExecution {
-  s3_tests_args: string;
-  mint_mode: string;
-  mint_targets: string[];
-  ozone_datanodes: string;
-}
-
-export interface RunSummary {
-  id: string;
-  run_id?: string;
-  status: string;
-  started_at: string;
-  finished_at?: string;
-  workflow_run_url?: string;
-  execution?: ExecutionInput | null;
-  file: string;
-  parquet_detail_base_url?: string;
-  sources: SourcesMap;
-  suites: Record<string, SuiteRecord>;
-}
-
-export interface FullRun {
-  schema_version?: number;
-  run_id: string;
-  id?: string;
-  started_at: string;
-  finished_at?: string;
-  status: string;
-  rate_formula?: string;
-  workflow_run_url?: string;
-  orchestration?: Record<string, unknown>;
-  execution?: ExecutionInput | null;
-  sources: SourcesMap;
-  suites: Record<string, SuiteRecord>;
-  log_files?: LogFileRecord[];
-}
-
-export type RunLike = RunSummary | FullRun;
-
-export interface OverallChartPoint {
+export interface BenchmarkRun {
+  schema_version: number;
   run_id: string;
   started_at: string;
-  rate: number | null;
-  eligible: number;
+  finished_at: string;
+  status: string;
+  workflow_run_url: string;
+  warp: Record<string, unknown>;
+  runner: Record<string, unknown>;
+  providers: BenchmarkProvider[];
+  profiles: BenchmarkProfile[];
+  results: BenchmarkResult[];
+  timeseries: BenchmarkTimeseriesPoint[];
+  commands: BenchmarkCommand[];
+  log_files: BenchmarkLogFile[];
+  logs: BenchmarkLogLine[];
+  artifacts: BenchmarkArtifact[];
 }
 
-export interface FeatureChartPoint extends OverallChartPoint {
-  passed: number;
-  failed: number;
-  errored: number;
-  skipped: number;
-}
-
-export interface IndexPayload {
-  generated_at: string;
-  rate_formula: string;
-  suite_order: string[];
-  runs: RunSummary[];
-  charts: {
-    overall: Record<string, OverallChartPoint[]>;
-    features: Record<string, Record<string, FeatureChartPoint[]>>;
-  };
-}
-
-export interface PartitionedIndexManifest {
-  schema_version?: number;
-  partitioned: true;
-  generated_at: string;
-  rate_formula: string;
-  suite_order: string[];
-  run_count?: number;
-  partitions: {
-    runs: string[];
-    charts_overall: string;
-    charts_features: Record<string, string>;
-  };
-}
-
-export interface IndexRunsShard {
-  runs: RunSummary[];
-}
-
-export interface IndexOverallChartsShard {
-  overall: Record<string, OverallChartPoint[]>;
-}
-
-export interface IndexFeatureChartsShard {
-  suite?: string;
-  features: Record<string, FeatureChartPoint[]>;
-}
-
-export type IndexBootstrapPayload = IndexPayload | PartitionedIndexManifest;
-
-export interface OrderedSuiteEntry {
-  key: string;
-  suite: SuiteRecord;
-}
-
-export type RunScopeKind = "unknown" | "subset" | "full";
-
-export interface RunScopeInfo {
-  kind: RunScopeKind;
-  label: string;
-}
-
-export interface HistoryTogglePayload {
-  summary: RunSummary;
-  open: boolean;
-}
+export type BenchmarkMetricKey = "throughput_mib_per_sec" | "ops_per_sec" | "objects_per_sec";
