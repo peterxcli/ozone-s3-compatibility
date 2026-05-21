@@ -232,7 +232,7 @@ jobs:
           git init "${pages_repo}"
           git -C "${pages_repo}" checkout -b gh-pages
           git -C "${pages_repo}" remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          rsync -a --delete out/pages/ "${pages_repo}/"
+          rsync -a --delete --exclude .git out/pages/ "${pages_repo}/"
           touch "${pages_repo}/.nojekyll"
           git -C "${pages_repo}" config user.name "github-actions[bot]"
           git -C "${pages_repo}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
