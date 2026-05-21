@@ -21,9 +21,10 @@ provider_start() {
   export WARP_ACCESS_KEY="${OZONE_ACCESS_KEY:-testuser}"
   export WARP_SECRET_KEY="${OZONE_SECRET_KEY:-testuser-secret}"
   curl -fsSL "https://raw.githubusercontent.com/apache/ozone-docker/refs/heads/latest/docker-compose.yaml" \
-    -o "${compose_dir}/docker-compose.yaml"
-  docker_compose -f "${compose_dir}/docker-compose.yaml" up -d --scale datanode="${OZONE_DATANODES:-3}"
-  wait_for_tcp "${WARP_HOST}" 300
+    -o "${compose_dir}/docker-compose.yaml" || return 1
+  docker_compose -f "${compose_dir}/docker-compose.yaml" up -d --scale datanode="${OZONE_DATANODES:-3}" || return 1
+  wait_for_tcp "${WARP_HOST}" 300 || return 1
+  wait_for_warp_s3 "${WARP_HOST}" "${WARP_ACCESS_KEY}" "${WARP_SECRET_KEY}" "${WARP_BUCKET}" "${OZONE_READY_TIMEOUT:-420}" || return 1
 }
 
 provider_stop() {

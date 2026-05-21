@@ -21,9 +21,10 @@ provider_start() {
     -p "${WARP_HOST#*:}:8333" \
     -e AWS_ACCESS_KEY_ID="${WARP_ACCESS_KEY}" \
     -e AWS_SECRET_ACCESS_KEY="${WARP_SECRET_KEY}" \
-    "${image}" \
-    server -s3 -s3.port=8333 -ip=0.0.0.0 -dir=/data >/dev/null
-  wait_for_tcp "${WARP_HOST}" 180
+    -e S3_BUCKET="${WARP_BUCKET}" \
+    "${image}" >/dev/null || return 1
+  wait_for_tcp "${WARP_HOST}" 180 || return 1
+  wait_for_warp_s3 "${WARP_HOST}" "${WARP_ACCESS_KEY}" "${WARP_SECRET_KEY}" "${WARP_BUCKET}" "${SEAWEEDFS_READY_TIMEOUT:-180}" || return 1
 }
 
 provider_stop() {

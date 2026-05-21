@@ -25,9 +25,10 @@ provider_start() {
     --address :9000 \
     --access-key "${WARP_ACCESS_KEY}" \
     --secret-key "${WARP_SECRET_KEY}" \
-    /data >/dev/null
-  wait_for_tcp "${WARP_HOST}" 180
-  [[ "$(docker inspect -f '{{.State.Running}}' "${container}")" == "true" ]]
+    /data >/dev/null || return 1
+  wait_for_tcp "${WARP_HOST}" 180 || return 1
+  [[ "$(docker inspect -f '{{.State.Running}}' "${container}")" == "true" ]] || return 1
+  wait_for_warp_s3 "${WARP_HOST}" "${WARP_ACCESS_KEY}" "${WARP_SECRET_KEY}" "${WARP_BUCKET}" "${RUSTFS_READY_TIMEOUT:-180}" || return 1
 }
 
 provider_stop() {

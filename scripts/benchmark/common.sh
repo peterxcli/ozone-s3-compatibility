@@ -66,6 +66,56 @@ wait_for_tcp() {
   done
 }
 
+wait_for_warp_s3() {
+  local address="$1"
+  local access_key="$2"
+  local secret_key="$3"
+  local bucket="$4"
+  local timeout_seconds="${5:-300}"
+  local started
+  local probe_dir
+  local probe_log
+  local benchdata
+  local exit_code
+  if [[ ! -x "${WARP_BINARY}" ]]; then
+    benchmark_log "Warp binary is not executable: ${WARP_BINARY}"
+    return 1
+  fi
+  started="$(date +%s)"
+  probe_dir="${RUNNER_TEMP:-/tmp}/warp-s3-readiness"
+  mkdir -p "${probe_dir}"
+  probe_log="${probe_dir}/${bucket}.log"
+  benchdata="${probe_dir}/${bucket}.csv.zst"
+  while true; do
+    rm -f "${probe_log}" "${benchdata}"
+    set +e
+    "${WARP_BINARY}" put \
+      --host="${address}" \
+      --access-key="${access_key}" \
+      --secret-key="${secret_key}" \
+      --bucket="${bucket}" \
+      --duration=1s \
+      --concurrent=1 \
+      --obj.size=1KiB \
+      --benchdata="${benchdata}" \
+      --autoterm >"${probe_log}" 2>&1
+    exit_code="$?"
+    set -e
+    if [[ "${exit_code}" -eq 0 ]]; then
+      rm -f "${probe_log}" "${benchdata}"
+      return 0
+    fi
+    if (( $(date +%s) - started >= timeout_seconds )); then
+      benchmark_log "Timed out waiting for S3 readiness at ${address}"
+      if [[ -s "${probe_log}" ]]; then
+        tail -n 20 "${probe_log}" >&2 || true
+      fi
+      return 1
+    fi
+    sleep 5
+  done
+}
+
 wait_for_container_log() {
   local container="$1"
   local pattern="$2"
