@@ -13,8 +13,8 @@ provider_start() {
   local container
   container="$(provider_container_name rustfs)"
   export WARP_HOST="${RUSTFS_HOST:-127.0.0.1:9000}"
-  export WARP_ACCESS_KEY="${RUSTFS_ACCESS_KEY:-rustfsadmin}"
-  export WARP_SECRET_KEY="${RUSTFS_SECRET_KEY:-rustfsadmin}"
+  export WARP_ACCESS_KEY="${RUSTFS_ACCESS_KEY:-warpbenchadmin}"
+  export WARP_SECRET_KEY="${RUSTFS_SECRET_KEY:-warpbenchadmin123456}"
   remove_container "${container}"
   docker run -d \
     --name "${container}" \
@@ -27,6 +27,7 @@ provider_start() {
     --secret-key "${WARP_SECRET_KEY}" \
     /data >/dev/null
   wait_for_tcp "${WARP_HOST}" 180
+  [[ "$(docker inspect -f '{{.State.Running}}' "${container}")" == "true" ]]
 }
 
 provider_stop() {
