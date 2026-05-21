@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "defaults": {
+    "duration_seconds": 5,
+    "objects": 128,
+    "analyze_duration": "1s"
+  },
+  "sizes": [
+    { "key": "small", "object_size": "128KiB" },
+    { "key": "medium", "object_size": "1MiB" },
+    { "key": "large", "object_size": "16MiB" }
+  ],
+  "concurrency": [
+    { "key": "c01", "value": 1 },
+    { "key": "c04", "value": 4 }
+  ],
+  "prefix_modes": [
+    { "key": "prefix", "noprefix": false },
+    { "key": "hot", "noprefix": true }
+  ],
+  "workloads": [
+    {
+      "key": "put",
+      "command": "put",
+      "operation": "PUT",
+      "size_keys": ["small"],
+      "concurrency_keys": ["c01"],
+      "prefix_mode_keys": ["prefix"]
+    },
+    {
+      "key": "get",
+      "command": "get",
+      "operation": "GET",
+      "size_keys": ["small"],
+      "concurrency_keys": ["c01"],
+      "prefix_mode_keys": ["prefix"]
+    },
+    {
+      "key": "mixed",
+      "command": "mixed",
+      "operation": "MIXED",
+      "size_keys": ["small"],
+      "concurrency_keys": ["c04"],
+      "prefix_mode_keys": ["prefix"]
+    },
+    {
+      "key": "list",
+      "command": "list",
+      "operation": "LIST",
+      "size_keys": ["small"],
+      "concurrency_keys": ["c04"],
+      "prefix_mode_keys": ["prefix"]
+    },
+    {
+      "key": "multipart-put",
+      "command": "multipart-put",
+      "operation": "PUT",
+      "size_keys": ["large"],
+      "concurrency_keys": ["c01"],
+      "prefix_mode_keys": ["prefix"],
+      "size_flag": "--part.size",
+      "extra_flags": ["--parts=4", "--part.concurrent=2"]
+    }
+  ]
+}

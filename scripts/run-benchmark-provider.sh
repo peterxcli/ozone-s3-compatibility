@@ -13,11 +13,14 @@ PROFILE_FILE="${PROFILE_FILE:-${ROOT_DIR}/benchmark/profiles/extended.json}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT_DIR}/out/benchmark/${PROVIDER}}"
 WARP_BINARY="${WARP_BINARY:-${ROOT_DIR}/warp/warp}"
 WARP_BUCKET="${WARP_BUCKET:-warp-benchmark-${PROVIDER}}"
+KEEP_BENCHDATA="${KEEP_BENCHDATA:-false}"
+BENCHDATA_ROOT="${BENCHDATA_ROOT:-${RUNNER_TEMP:-${OUTPUT_ROOT}}/warp-benchdata/${PROVIDER}}"
 
 source "${ROOT_DIR}/scripts/benchmark/common.sh"
 source "${ROOT_DIR}/scripts/benchmark/providers/${PROVIDER}.sh"
 
 mkdir -p "${OUTPUT_ROOT}"
+mkdir -p "${BENCHDATA_ROOT}"
 COMMANDS_FILE="${OUTPUT_ROOT}/profile-commands.tsv"
 METADATA_FILE="${OUTPUT_ROOT}/metadata.json"
 
@@ -27,7 +30,7 @@ PROVIDER_IMAGE_DIGEST="$(resolve_image "${PROVIDER_IMAGE}")"
 PROVIDER_LABEL="$(provider_label)"
 STARTUP_SECONDS=0
 ADAPTER_STATUS="completed"
-export PROVIDER PROVIDER_STARTED_AT PROVIDER_IMAGE PROVIDER_IMAGE_DIGEST PROVIDER_LABEL STARTUP_SECONDS ADAPTER_STATUS
+export PROVIDER PROVIDER_STARTED_AT PROVIDER_IMAGE PROVIDER_IMAGE_DIGEST PROVIDER_LABEL STARTUP_SECONDS ADAPTER_STATUS KEEP_BENCHDATA BENCHDATA_ROOT
 
 cleanup() {
   provider_stop || true
@@ -47,6 +50,7 @@ export WARP_HOST="${WARP_HOST:-}" WARP_ACCESS_KEY="${WARP_ACCESS_KEY:-}" WARP_SE
 
 python3 - "${PROFILE_FILE}" "${WARP_BINARY}" "${WARP_HOST:-}" "${WARP_ACCESS_KEY:-}" "${WARP_SECRET_KEY:-}" "${WARP_BUCKET}" "${OUTPUT_ROOT}" "${METADATA_FILE}" "${COMMANDS_FILE}" <<'PY'
 import json
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -58,11 +62,14 @@ warp_binary, host, access_key, secret_key, bucket = sys.argv[2:7]
 output_root = Path(sys.argv[7])
 metadata_file = Path(sys.argv[8])
 commands_file = Path(sys.argv[9])
+keep_benchdata = os.environ.get("KEEP_BENCHDATA", "false").lower() == "true"
+benchdata_root = Path(os.environ.get("BENCHDATA_ROOT") or output_root)
 
 profile_rows = []
 command_lines = []
 for profile in load_profiles(profile_file):
     benchdata = f"{profile.profile_id}.csv.zst"
+    benchdata_path = output_root / benchdata if keep_benchdata else benchdata_root / benchdata
     analyze_out = f"{profile.profile_id}-timeseries.csv"
     analyze_text = f"{profile.profile_id}-analyze.txt"
     command = render_warp_command(
@@ -72,14 +79,14 @@ for profile in load_profiles(profile_file):
         access_key=access_key,
         secret_key=secret_key,
         bucket=bucket,
-        benchdata_path=str(output_root / benchdata),
+        benchdata_path=str(benchdata_path),
         analyze_out_path=str(output_root / analyze_out),
     )
     record = profile.to_record()
     record.update({
         "command": command,
         "exit_code": None,
-        "benchdata": benchdata,
+        "benchdata": benchdata if keep_benchdata else "",
         "analyze_out": analyze_out,
         "analyze_text": analyze_text,
     })
@@ -138,6 +145,9 @@ for profile in payload["profiles"]:
         break
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
+    if [[ "${KEEP_BENCHDATA}" != "true" ]]; then
+      rm -f "${BENCHDATA_ROOT}/${profile_id}.csv.zst" || true
+    fi
   done < "${COMMANDS_FILE}"
 fi
 

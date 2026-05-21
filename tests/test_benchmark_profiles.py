@@ -14,6 +14,14 @@ def test_load_profiles_expands_workload_dimensions() -> None:
     assert all(profile.objects >= 6400 for profile in profiles if profile.workload == "delete")
 
 
+def test_load_smoke_profiles_for_manual_dispatch() -> None:
+    profiles = load_profiles(Path("benchmark/profiles/smoke.json"))
+
+    assert {profile.workload for profile in profiles} == {"put", "get", "mixed", "list", "multipart-put"}
+    assert len(profiles) == 5
+    assert all(profile.duration_seconds == 5 for profile in profiles)
+
+
 def test_render_warp_command_includes_common_and_workload_flags() -> None:
     profile = next(
         profile

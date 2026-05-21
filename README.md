@@ -13,12 +13,13 @@ The active report is workload-first: choose a Warp workload/profile, compare pro
   - Starts each provider through a Docker adapter under `scripts/benchmark/providers/`.
   - Runs the shared benchmark profiles from `benchmark/profiles/extended.json`.
   - Aggregates provider artifacts into `out/run/run.json`, writes Parquet report data, builds the Vue frontend, and publishes a fresh Pages root when publishing is enabled.
-  - Manual `workflow_dispatch` supports optional provider filtering and a publish flag.
+  - Manual `workflow_dispatch` supports optional provider filtering, a publish flag, and a profile suite selector. Manual runs default to `smoke`; scheduled runs use `extended`.
 
 ## Layout
 
 - `warp/`: `minio/warp` submodule used to build the benchmark binary. Workflow runs refresh it from upstream before each benchmark; the committed pointer is only the bootstrap version.
-- `benchmark/profiles/extended.json`: shared workload/profile matrix.
+- `benchmark/profiles/smoke.json`: short manual-dispatch profile suite.
+- `benchmark/profiles/extended.json`: nightly workload/profile matrix.
 - `scripts/run-benchmark-provider.sh`: runs one provider adapter and all configured profiles.
 - `scripts/benchmark/common.sh`: shared Docker, image digest, readiness, and runner metadata helpers.
 - `scripts/benchmark/providers/`: provider-specific Docker startup/readiness/cleanup adapters.

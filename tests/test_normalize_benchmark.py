@@ -122,3 +122,91 @@ def test_normalize_benchmark_run_builds_results_and_timeseries(tmp_path: Path) -
     assert run["results"][0]["errors"] == 1
     assert len(run["timeseries"]) == 2
     assert run["commands"][0]["command"] == ["warp", "put"]
+
+
+def test_normalize_benchmark_run_parses_analyze_text_when_csv_is_missing(tmp_path: Path) -> None:
+    provider_dir = tmp_path / "rustfs"
+    provider_dir.mkdir()
+    (provider_dir / "put-small-c01-prefix-analyze.txt").write_text(
+        """
+Report: PUT. Concurrency: 1. Ran: 2s
+ * Average: 60.68 MiB/s, 485.46 obj/s
+ * Reqs: Avg: 2.0ms, 50%: 1.8ms
+
+Throughput, split into 2 x 1s:
+ * Fastest: 62.1MiB/s, 497.13 obj/s
+ * 50% Median: 62.1MiB/s, 497.13 obj/s
+ * Slowest: 59.2MiB/s, 473.80 obj/s
+""",
+        encoding="utf-8",
+    )
+    (provider_dir / "mixed-small-c04-prefix-analyze.txt").write_text(
+        """
+Report: DELETE. Concurrency: 4. Ran: 2s
+ * Average: 132.50 obj/s
+
+Report: Total. Concurrency: 4. Ran: 2s
+ * Average: 102.82 MiB/s, 1359.63 obj/s
+""",
+        encoding="utf-8",
+    )
+    (provider_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "provider": "rustfs",
+                "label": "RustFS",
+                "image": "rustfs/rustfs",
+                "image_tag": "latest",
+                "image_digest": "sha256:abc",
+                "endpoint": "127.0.0.1:9000",
+                "adapter_status": "completed",
+                "profiles": [
+                    {
+                        "profile_id": "put-small-c01-prefix",
+                        "workload": "put",
+                        "operation": "PUT",
+                        "object_size": "128KiB",
+                        "concurrency": 1,
+                        "prefix_mode": "prefix",
+                        "duration_seconds": 5,
+                        "command": ["warp", "put"],
+                        "exit_code": 0,
+                        "analyze_out": "put-small-c01-prefix-timeseries.csv",
+                        "analyze_text": "put-small-c01-prefix-analyze.txt",
+                    },
+                    {
+                        "profile_id": "mixed-small-c04-prefix",
+                        "workload": "mixed",
+                        "operation": "MIXED",
+                        "object_size": "128KiB",
+                        "concurrency": 4,
+                        "prefix_mode": "prefix",
+                        "duration_seconds": 5,
+                        "command": ["warp", "mixed"],
+                        "exit_code": 0,
+                        "analyze_out": "mixed-small-c04-prefix-timeseries.csv",
+                        "analyze_text": "mixed-small-c04-prefix-analyze.txt",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    run = normalize_benchmark_run(
+        provider_dirs=[provider_dir],
+        run_id="2026-05-21T00-00-02Z",
+        started_at="2026-05-21T00:00:00Z",
+        finished_at="2026-05-21T00:00:02Z",
+        workflow_run_url="https://github.example/runs/1",
+        warp={"repo": "https://github.com/minio/warp", "commit": "abc123", "version": "warp version"},
+        runner={"os": "Linux"},
+    )
+
+    by_profile = {result["profile_id"]: result for result in run["results"]}
+    assert by_profile["put-small-c01-prefix"]["throughput_mib_per_sec"] == 60.68
+    assert by_profile["put-small-c01-prefix"]["objects_per_sec"] == 485.46
+    assert by_profile["put-small-c01-prefix"]["duration_seconds"] == 2.0
+    assert by_profile["mixed-small-c04-prefix"]["operation"] == "MIXED"
+    assert by_profile["mixed-small-c04-prefix"]["throughput_mib_per_sec"] == 102.82
+    assert len(run["timeseries"]) == 0

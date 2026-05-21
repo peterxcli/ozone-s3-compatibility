@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +13,13 @@ from typing import Any
 
 
 MIB = 1024 * 1024
+
+REPORT_RE = re.compile(r"^Report:\s+(?P<operation>[^.]+)\.\s+Concurrency:\s+\d+\.\s+Ran:\s+(?P<duration>\S+)")
+AVERAGE_RE = re.compile(
+    r"^\s*\*\s+Average:\s+"
+    r"(?:(?P<throughput>[0-9.]+)\s*(?P<throughput_unit>[KMGT]?i?B/s),\s*)?"
+    r"(?P<objects>[0-9.]+)\s+obj/s"
+)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -51,6 +59,78 @@ def float_field(value: Any, default: float = 0.0) -> float:
 
 def utc_now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def duration_to_seconds(value: str) -> float:
+    text = string_field(value)
+    match = re.fullmatch(r"([0-9.]+)(ms|s|m|h)", text)
+    if not match:
+        return 0.0
+    number = float(match.group(1))
+    unit = match.group(2)
+    if unit == "ms":
+        return number / 1000
+    if unit == "m":
+        return number * 60
+    if unit == "h":
+        return number * 3600
+    return number
+
+
+def throughput_to_mib(value: str, unit: str) -> float:
+    amount = float_field(value)
+    normalized = unit.lower()
+    if normalized in {"b/s", "byte/s", "bytes/s"}:
+        return amount / MIB
+    if normalized in {"kib/s", "kb/s"}:
+        return amount / 1024
+    if normalized in {"mib/s", "mb/s"}:
+        return amount
+    if normalized in {"gib/s", "gb/s"}:
+        return amount * 1024
+    if normalized in {"tib/s", "tb/s"}:
+        return amount * 1024 * 1024
+    return amount
+
+
+def parse_analyze_summary(analyze_path: Path, profile: dict[str, Any]) -> dict[str, Any] | None:
+    if not analyze_path.exists():
+        return None
+
+    summaries: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for line in analyze_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        report = REPORT_RE.match(line)
+        if report:
+            current = {
+                "operation": report.group("operation").upper(),
+                "duration_seconds": duration_to_seconds(report.group("duration")),
+            }
+            summaries.append(current)
+            continue
+        average = AVERAGE_RE.match(line)
+        if average and current is not None:
+            throughput = average.group("throughput")
+            unit = average.group("throughput_unit")
+            current["throughput_mib_per_sec"] = throughput_to_mib(throughput, unit) if throughput and unit else None
+            current["objects_per_sec"] = float_field(average.group("objects"))
+            current["ops_per_sec"] = float_field(average.group("objects"))
+
+    summaries = [summary for summary in summaries if "objects_per_sec" in summary]
+    if not summaries:
+        return None
+
+    workload = string_field(profile.get("workload"))
+    profile_operation = string_field(profile.get("operation")).upper()
+    if workload == "mixed":
+        for summary in summaries:
+            if summary["operation"] == "TOTAL":
+                summary["operation"] = profile_operation or "MIXED"
+                return summary
+    for summary in summaries:
+        if summary["operation"] == profile_operation:
+            return summary
+    return summaries[0]
 
 
 def run_id_from_timestamp(value: str) -> str:
@@ -101,6 +181,7 @@ def result_rows_for_profile(
     provider: str,
     profile: dict[str, Any],
     timeseries_rows: list[dict[str, Any]],
+    analyze_summary: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     exit_code = int_field(profile.get("exit_code"), default=1)
     rows_by_operation: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -108,6 +189,25 @@ def result_rows_for_profile(
         rows_by_operation[row["operation"]].append(row)
 
     if not rows_by_operation:
+        if analyze_summary is not None:
+            return [
+                {
+                    "provider": provider,
+                    "profile_id": string_field(profile.get("profile_id")),
+                    "workload": string_field(profile.get("workload")),
+                    "operation": string_field(analyze_summary.get("operation") or profile.get("operation")).upper(),
+                    "status": "completed" if exit_code == 0 else "failed",
+                    "exit_code": exit_code,
+                    "throughput_mib_per_sec": analyze_summary.get("throughput_mib_per_sec"),
+                    "ops_per_sec": analyze_summary.get("ops_per_sec"),
+                    "objects_per_sec": analyze_summary.get("objects_per_sec"),
+                    "errors": 0,
+                    "duration_seconds": analyze_summary.get("duration_seconds", 0.0),
+                    "benchdata": string_field(profile.get("benchdata")),
+                    "analyze_out": string_field(profile.get("analyze_out")),
+                    "analyze_text": string_field(profile.get("analyze_text")),
+                }
+            ]
         return [
             {
                 "provider": provider,
@@ -215,7 +315,16 @@ def normalize_provider_dir(provider_dir: Path) -> dict[str, Any]:
             csv_path=provider_dir / analyze_out if analyze_out else provider_dir / "_missing.csv",
         )
         all_timeseries.extend(timeseries_rows)
-        results.extend(result_rows_for_profile(provider=provider, profile=profile, timeseries_rows=timeseries_rows))
+        analyze_text = string_field(profile.get("analyze_text"))
+        analyze_summary = None if timeseries_rows else parse_analyze_summary(provider_dir / analyze_text, profile)
+        results.extend(
+            result_rows_for_profile(
+                provider=provider,
+                profile=profile,
+                timeseries_rows=timeseries_rows,
+                analyze_summary=analyze_summary,
+            )
+        )
         commands.append(
             {
                 "provider": provider,

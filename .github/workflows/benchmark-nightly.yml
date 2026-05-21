@@ -15,6 +15,14 @@ on:
         required: false
         default: ""
         type: string
+      profile_suite:
+        description: "Benchmark profile suite to run."
+        required: false
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - extended
 
 permissions:
   contents: write
@@ -25,6 +33,7 @@ concurrency:
 
 env:
   PUBLISH_PAGES: ${{ github.event_name == 'schedule' || github.event.inputs.publish_pages == true || github.event.inputs.publish_pages == 'true' || inputs.publish_pages == true || inputs.publish_pages == 'true' || false }}
+  PROFILE_SUITE: ${{ github.event_name == 'schedule' && 'extended' || github.event.inputs.profile_suite || 'smoke' }}
 
 jobs:
   benchmark:
@@ -86,17 +95,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
           docker compose version || docker-compose --version
+          df -h
 
       - name: Build Warp
         if: ${{ steps.filter.outputs.enabled == 'true' }}
-        run: go -C warp build -o warp .
+        run: |
+          set -euo pipefail
+          go -C warp build -o warp .
+          go clean -cache -modcache || true
+          docker system prune -af --volumes || true
+          df -h
 
       - name: Run provider benchmark
         if: ${{ steps.filter.outputs.enabled == 'true' }}
         env:
           PROVIDER: ${{ matrix.provider }}
           OUTPUT_ROOT: ${{ github.workspace }}/out/providers/${{ matrix.provider }}
-        run: bash scripts/run-benchmark-provider.sh "${PROVIDER}"
+          KEEP_BENCHDATA: "false"
+        run: |
+          set -euo pipefail
+          export PROFILE_FILE="${GITHUB_WORKSPACE}/benchmark/profiles/${PROFILE_SUITE}.json"
+          echo "Using profile suite: ${PROFILE_SUITE} (${PROFILE_FILE})"
+          bash scripts/run-benchmark-provider.sh "${PROVIDER}"
 
       - name: Upload provider artifact
         if: ${{ always() && steps.filter.outputs.enabled == 'true' }}
@@ -153,6 +173,8 @@ jobs:
           uv sync --locked
           npm --prefix site ci
           go -C warp build -o warp .
+          go clean -cache -modcache || true
+          df -h
 
       - name: Normalize benchmark run
         env:
