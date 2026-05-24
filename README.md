@@ -1,8 +1,38 @@
 # Warp S3 Benchmark Report
 
-Runs MinIO Warp against Docker-based RustFS, SeaweedFS, Ceph, and Apache Ozone targets, normalizes the results, and publishes a static GitHub Pages performance report.
+A nightly S3 performance radar for object-storage systems.
 
-The active report is workload-first: choose a Warp workload/profile, compare providers side by side, inspect time-series segments, and download raw Warp artifacts.
+This project runs [MinIO Warp](https://github.com/minio/warp) against Docker-based RustFS, SeaweedFS, Ceph, and Apache Ozone targets, normalizes the results, and publishes a workload-first GitHub Pages report. It helps storage engineers and platform teams answer three questions:
+
+1. How do S3-compatible systems compare on the same workload profile?
+2. Which throughput, latency, and error patterns show up in the latest run?
+3. Which commands, logs, image digests, and raw artifacts explain a result?
+
+Live report: https://peterxcli.github.io/ozone-s3-compatibility/
+Repo: https://github.com/peterxcli/ozone-s3-compatibility
+
+This `main` branch now tracks Warp-based performance benchmarks. It does not publish the older `ceph/s3-tests` and MinIO Mint compatibility report surface.
+
+## Why This Matters
+
+S3 performance is not a single number. It changes with workload shape, object size, concurrency, multipart behavior, list/stat/delete patterns, provider readiness, Docker image version, and the benchmark binary itself.
+
+This project turns those details into reproducible evidence:
+
+- nightly latest-vs-latest benchmark history
+- shared Warp workload profiles across every provider
+- side-by-side provider comparisons
+- per-provider time-series segments
+- exact Warp commands, provider logs, image digests, and raw artifacts
+- Parquet data for deeper analysis through DuckDB-Wasm or external tools
+
+## How to Help
+
+- Use the live report to inspect the latest workload comparisons.
+- Check archived run details before drawing conclusions from one result.
+- Add or tune benchmark profiles in `benchmark/profiles/`.
+- Improve a provider adapter under `scripts/benchmark/providers/`.
+- Run a manual smoke workflow before proposing benchmark or report changes.
 
 ## Workflows
 
