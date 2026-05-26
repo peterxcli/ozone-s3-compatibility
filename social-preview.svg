@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Warp S3 Benchmark Report</title>
+  <desc id="desc">Nightly Warp S3 performance benchmark report for RustFS, SeaweedFS, Ceph, and Apache Ozone.</desc>
+  <rect width="1200" height="630" fill="#f6f8fb" />
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect x="44" y="42" width="1112" height="546" rx="22" fill="#fff" stroke="#d8e1ec" />
+    <text x="84" y="112" fill="#146c94" font-size="18" font-weight="800" letter-spacing="4">NIGHTLY S3 PERFORMANCE</text>
+    <text x="84" y="210" fill="#142033" font-size="78" font-weight="850">Warp Benchmark</text>
+    <text x="84" y="296" fill="#142033" font-size="78" font-weight="850">Report</text>
+    <text x="84" y="356" fill="#607087" font-size="24" font-weight="500">RustFS · SeaweedFS · Ceph · Apache Ozone</text>
+    <text x="84" y="394" fill="#607087" font-size="24" font-weight="500">Workload-first comparisons backed by Parquet and DuckDB-Wasm.</text>
+    <g transform="translate(84 456)">
+      <rect width="210" height="54" rx="8" fill="#e2f5ee" />
+      <text x="24" y="35" fill="#0f8f6f" font-size="20" font-weight="800">PUT / GET</text>
+    </g>
+    <g transform="translate(318 456)">
+      <rect width="210" height="54" rx="8" fill="#e8eefc" />
+      <text x="24" y="35" fill="#4a7cda" font-size="20" font-weight="800">MIXED</text>
+    </g>
+    <g transform="translate(552 456)">
+      <rect width="210" height="54" rx="8" fill="#fdecea" />
+      <text x="24" y="35" fill="#d84a3a" font-size="20" font-weight="800">RANGE</text>
+    </g>
+    <g transform="translate(786 456)">
+      <rect width="250" height="54" rx="8" fill="#efeafa" />
+      <text x="24" y="35" fill="#8b63d9" font-size="20" font-weight="800">MULTIPART</text>
+    </g>
+  </g>
+</svg>
