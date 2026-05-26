@@ -1,0 +1,12 @@
+{
+  "source": "parquet-viewer",
+  "version": "0.1.31",
+  "script": "./assets/parquet-viewer-dxha49ad531adbaecbe.js",
+  "wasm": "./assets/parquet-viewer_bg-dxhdde723804d3ae8f4.wasm",
+  "styles": [
+    "./assets/tailwind-dxh7de33b177653975.css",
+    "./assets/main-dxhafef5d1d53d41aa.css",
+    "./assets/toast-dxhfae18128a447f612.css"
+  ],
+  "icon": "./assets/icon-192x192-dxh3a894aef3e5d53b3.png"
+}

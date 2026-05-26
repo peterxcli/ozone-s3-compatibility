@@ -4,12 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Parquet Viewer</title>
-    <link rel="icon" href="./assets/icon-192x192-dxh3a894aef3e5d53b3.png" type="image/png" />
+    <link rel="icon" href="./favicon.ico" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
-    <link rel="preload" as="script" href="./assets/parquet-viewer-dxh4a536bbbd247c221.js" crossorigin />
     <script>
       (() => {
         const params = new URLSearchParams(window.location.search);
@@ -25,7 +24,7 @@
   </head>
   <body>
     <div id="main"></div>
-    <script type="module" async src="./assets/parquet-viewer-dxh4a536bbbd247c221.js"></script>
+    <script src="./parquet-viewer-runtime-loader.js"></script>
     <script src="./parquet-viewer-url-loader.js"></script>
   </body>
 </html>
