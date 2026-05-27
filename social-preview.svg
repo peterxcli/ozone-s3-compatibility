@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">Apache Ozone S3 Compatibility</title>
-  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, latest run May 18, 2026, 7:41 AM UTC.</desc>
+  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, latest run May 27, 2026, 7:48 AM UTC.</desc>
 
   <defs>
     <linearGradient id="page" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -46,11 +46,11 @@
   <g font-family="'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="600">
     <g transform="translate(60 456)">
       <rect width="308" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">May 18, 2026, 7:41 AM UTC</text>
+      <text x="18" y="25" fill="#12263f">May 27, 2026, 7:48 AM UTC</text>
     </g>
     <g transform="translate(382 456)">
       <rect width="184" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">Ozone ccab47a1c630</text>
+      <text x="18" y="25" fill="#12263f">Ozone 556598960e6f</text>
     </g>
   </g>
 
@@ -71,18 +71,18 @@
       <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
       <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">S3-TESTS</text>
       <text x="24" y="86" font-size="22" font-weight="700">711 eligible cases</text>
-      <text x="24" y="152" font-size="58" font-weight="500">29.2%</text>
-      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">208 passed, 503 failed/error, 79 skipped</text>
-      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.3 pts vs previous</text>
+      <text x="24" y="152" font-size="58" font-weight="500">29.8%</text>
+      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">212 passed, 499 failed/error, 79 skipped</text>
+      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.6 pts vs previous</text>
     </g>
 
     <g transform="translate(690 342)">
       <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
       <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">MINT</text>
-      <text x="24" y="86" font-size="22" font-weight="700">46 eligible cases</text>
-      <text x="24" y="152" font-size="58" font-weight="500">82.6%</text>
-      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">38 passed, 8 failed/error, 0 skipped</text>
-      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.0 pts vs previous</text>
+      <text x="24" y="86" font-size="22" font-weight="700">39 eligible cases</text>
+      <text x="24" y="152" font-size="58" font-weight="500">82.0%</text>
+      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">32 passed, 7 failed/error, 1 skipped</text>
+      <text x="24" y="216" font-size="18" font-weight="800" fill="#d2493a">-0.6 pts vs previous</text>
     </g>
   </g>
 </svg>
