@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">Apache Ozone S3 Compatibility</title>
-  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, latest run Aug 26, 2026, 4:07 AM UTC.</desc>
+  <desc id="desc">Nightly GitHub Pages report for Apache Ozone S3 compatibility against s3-tests and mint, latest run Aug 27, 2026, 1:36 PM UTC.</desc>
 
   <defs>
     <linearGradient id="page" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -46,11 +46,11 @@
   <g font-family="'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="600">
     <g transform="translate(60 456)">
       <rect width="308" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">Aug 26, 2026, 4:07 AM UTC</text>
+      <text x="18" y="25" fill="#12263f">Aug 27, 2026, 1:36 PM UTC</text>
     </g>
     <g transform="translate(382 456)">
       <rect width="184" height="40" rx="20" fill="#ffffff" fill-opacity="0.94" stroke="#d7e2ee" />
-      <text x="18" y="25" fill="#12263f">Ozone 7f6ea8b1ac74</text>
+      <text x="18" y="25" fill="#12263f">Ozone 9ff918bf2b37</text>
     </g>
   </g>
 
@@ -80,9 +80,9 @@
       <rect width="470" height="228" rx="26" fill="url(#card)" stroke="#d7e2ee" />
       <text x="24" y="38" font-size="15" font-weight="800" letter-spacing="2.5" fill="#0b6286">MINT</text>
       <text x="24" y="86" font-size="22" font-weight="700">223 eligible cases</text>
-      <text x="24" y="152" font-size="58" font-weight="500">83.0%</text>
-      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">185 passed, 38 failed/error, 1 skipped</text>
-      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.0 pts vs previous</text>
+      <text x="24" y="152" font-size="58" font-weight="500">83.4%</text>
+      <text x="24" y="192" font-size="18" font-weight="500" fill="#60758e">186 passed, 37 failed/error, 31 skipped</text>
+      <text x="24" y="216" font-size="18" font-weight="800" fill="#0f9d71">+0.4 pts vs previous</text>
     </g>
   </g>
 </svg>
