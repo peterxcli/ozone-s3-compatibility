@@ -1,8 +1,8 @@
 {
   "source": "parquet-viewer",
   "version": "0.1.31",
-  "script": "./assets/parquet-viewer-dxhb145c125a3f0a95e.js",
-  "wasm": "./assets/parquet-viewer_bg-dxhee2f10e676b705a.wasm",
+  "script": "./assets/parquet-viewer-dxhef52c2194095aa89.js",
+  "wasm": "./assets/parquet-viewer_bg-dxh911c265110841e9.wasm",
   "styles": [
     "./assets/tailwind-dxh7de33b177653975.css",
     "./assets/main-dxhafef5d1d53d41aa.css",
