@@ -149,6 +149,8 @@ SEARCH_CASES_SCHEMA = pa.schema(
     ]
 )
 SEARCH_CASES_PATH = "search/cases.parquet"
+# Per-run files earlier builds published; removed when a run is rewritten.
+OBSOLETE_RUN_FILES = ["search-rows.parquet"]
 SEARCH_DETAIL_PREVIEW_CHARS = 600
 SEARCH_DICTIONARY_COLUMNS = [
     "suite_key",
@@ -732,6 +734,8 @@ def write_run_dataset(
     run_id = string_field(run.get("run_id") or run.get("id"))
     run_dir = data_dir / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    for name in OBSOLETE_RUN_FILES:
+        (run_dir / name).unlink(missing_ok=True)
     records: list[dict[str, Any]] = []
 
     metadata_path = run_dir / "metadata.parquet"

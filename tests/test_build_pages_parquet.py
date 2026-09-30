@@ -65,6 +65,8 @@ class BuildPagesParquetTests(unittest.TestCase):
             old_log.write_text("old log line\n", encoding="utf-8")
             existing_data = root / "existing" / "data"
             parquet_run.write_pages_parquet_dataset([old_run], existing_data, {old_run["run_id"]: old_raw_root})
+            # Published by earlier builds; must not survive a republish.
+            (existing_data / "runs" / old_run["run_id"] / "search-rows.parquet").write_bytes(b"PAR1")
 
             run_json = root / "run.json"
             run_json.write_text(json.dumps(new_run), encoding="utf-8")
@@ -94,6 +96,7 @@ class BuildPagesParquetTests(unittest.TestCase):
             self.assertFalse((pages_data / "runs" / f"{new_run['run_id']}.json").exists())
             self.assertFalse((pages_data / "runs" / f"{old_run['run_id']}.json").exists())
             self.assertTrue((pages_data / "runs" / old_run["run_id"] / "logs-pytest.parquet").exists())
+            self.assertFalse((pages_data / "runs" / old_run["run_id"] / "search-rows.parquet").exists())
 
             catalog = pq.read_table(pages_data / "catalog" / "runs.parquet").to_pylist()
             self.assertEqual([new_run["run_id"], old_run["run_id"]], [row["run_id"] for row in catalog])
