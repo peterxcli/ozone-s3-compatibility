@@ -120,22 +120,45 @@ CASES_SCHEMA = pa.schema(
     ]
 )
 
-SEARCH_ROWS_SCHEMA = pa.schema(
+# One row per distinct (test case, failure content) across all published runs.
+# The browser queries this file with DataFusion over HTTP range requests, so
+# the layout favors pruning: one row group per suite, page indexes, and
+# dictionaries only on low-cardinality columns so text pages can be skipped.
+SEARCH_CASES_SCHEMA = pa.schema(
     [
-        ("run_id", pa.string()),
+        ("content_id", pa.int32()),
         ("suite_key", pa.string()),
         ("case_id", pa.string()),
-        ("status", pa.string()),
-        ("features", pa.list_(pa.string())),
         ("test_name", pa.string()),
         ("classname", pa.string()),
+        ("status", pa.string()),
+        ("features", pa.list_(pa.string())),
         ("message", pa.string()),
         ("detail_preview", pa.string()),
         ("source_path", pa.string()),
         ("source_symbol", pa.string()),
+        # Space-padded, sorted, unique lowercase words from the fields above,
+        # with and without camelCase splitting, for `LIKE '% word%'` matching.
         ("search_text", pa.string()),
+        ("latest_run_id", pa.string()),
+        # 0 is the newest run in this data set.
+        ("latest_run_ordinal", pa.int32()),
+        # Every run this content appeared in, newest first.
+        ("run_ids", pa.list_(pa.string())),
+        ("run_count", pa.int32()),
     ]
 )
+SEARCH_CASES_PATH = "search/cases.parquet"
+SEARCH_DETAIL_PREVIEW_CHARS = 600
+SEARCH_DICTIONARY_COLUMNS = [
+    "suite_key",
+    "classname",
+    "status",
+    "features.list.element",
+    "source_path",
+    "latest_run_id",
+    "run_ids.list.element",
+]
 
 LOGS_SCHEMA = pa.schema(
     [
@@ -255,27 +278,21 @@ def case_source_info(run: dict[str, Any], suite_key: str, case: dict[str, Any]) 
     }
 
 
-def search_text(*values: Any) -> str:
-    parts: list[str] = []
-    for value in values:
-        if value is None:
-            continue
-        if isinstance(value, list):
-            parts.extend(str(item) for item in value if item)
-        else:
-            text = str(value)
-            if text:
-                parts.append(text)
-    return " ".join(parts)
+def search_words(value: Any) -> set[str]:
+    """Lowercase alphanumeric words, both with and without camelCase splitting."""
+    text = str(value or "")
+    split = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    return set(re.findall(r"[a-z0-9]+", split.lower())) | set(re.findall(r"[a-z0-9]+", text.lower()))
 
 
-def search_variants(value: Any) -> str:
-    text = search_text(value)
-    if not text:
-        return ""
-    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
-    spaced = re.sub(r"[_/.-]+", " ", spaced)
-    return search_text(text, spaced)
+def comparable_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip()).lower()
+
+
+def comparable_content_text(value: Any) -> str:
+    """Ignores memory addresses and line numbers that change between runs."""
+    text = re.sub(r"0x[0-9a-f]+", "0x...", comparable_text(value))
+    return re.sub(r"\b([\w./-]+\.[a-z0-9]+):\d+", r"\1:<line>", text, flags=re.ASCII)
 
 
 def summary_value(summary: dict[str, Any], key: str, default: int = 0) -> Any:
@@ -423,48 +440,102 @@ def build_case_rows(run: dict[str, Any], suite_key: str, suite: dict[str, Any]) 
     return rows
 
 
-def build_search_rows(case_rows_by_suite: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for suite_key in sorted(case_rows_by_suite):
-        for case in case_rows_by_suite[suite_key]:
-            row = {
-                "run_id": case["run_id"],
-                "suite_key": suite_key,
-                "case_id": case["case_id"],
-                "status": case["status"],
-                "features": case["features"],
-                "test_name": case["name"],
-                "classname": case["classname"],
-                "message": case["message"],
-                "detail_preview": case["detail"][:600],
-                "source_path": case["source_path"],
-                "source_symbol": case["source_symbol"],
-                "search_text": "",
-            }
-            row["search_text"] = search_text(
-                search_variants(row["suite_key"]),
-                search_variants(row["test_name"]),
-                search_variants(row["classname"]),
-                search_variants(row["status"]),
-                search_variants(row["features"]),
-                search_variants(row["message"]),
-                search_variants(row["detail_preview"]),
-                search_variants(row["source_path"]),
-                search_variants(row["source_symbol"]),
-            )
-            rows.append(row)
+def search_case_key(suite_key: str, case: dict[str, Any], detail_preview: str) -> tuple[tuple[str, ...], ...]:
+    """Groups repeated history: the same test failing the same way in many runs."""
+    source_path = comparable_text(case["source_path"])
+    source_symbol = comparable_text(case["source_symbol"])
+    if source_path or source_symbol:
+        identity = ("source", suite_key, source_path, source_symbol)
+    else:
+        identity = ("case", suite_key, comparable_text(case["classname"]), comparable_text(case["name"]))
+    # Suites without a source file are only identified by their target and function.
+    target = "" if suite_key == "s3_tests" else f"{case['classname']}\n{case['name']}"
+    content = (
+        comparable_content_text(case["status"]),
+        " ".join(sorted(comparable_content_text(feature) for feature in case["features"])),
+        comparable_content_text(case["message"]),
+        comparable_content_text(detail_preview),
+        comparable_content_text(target),
+    )
+    return identity, content
+
+
+def build_search_case_rows(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    runs_newest_first = sorted(runs, key=lambda item: string_field(item.get("started_at")), reverse=True)
+    groups: dict[tuple[tuple[str, ...], ...], dict[str, Any]] = {}
+    for run_ordinal, run in enumerate(runs_newest_first):
+        run_id = string_field(run.get("run_id") or run.get("id"))
+        for suite_key, suite in sorted(run.get("suites", {}).items()):
+            suite_label = string_field(suite.get("label")) or suite_file_stem(suite_key)
+            for case in build_case_rows(run, suite_key, suite):
+                detail_preview = case["detail"][:SEARCH_DETAIL_PREVIEW_CHARS]
+                key = search_case_key(suite_key, case, detail_preview)
+                group = groups.get(key)
+                if group is None:
+                    group = groups[key] = {
+                        "suite_key": suite_key,
+                        "case_id": case["case_id"],
+                        "test_name": case["name"],
+                        "classname": case["classname"],
+                        "status": case["status"],
+                        "features": case["features"],
+                        "message": case["message"],
+                        "detail_preview": detail_preview,
+                        "source_path": case["source_path"],
+                        "source_symbol": case["source_symbol"],
+                        "latest_run_id": run_id,
+                        "latest_run_ordinal": run_ordinal,
+                        "run_ids": [],
+                        "words": set(),
+                    }
+                if not group["run_ids"] or group["run_ids"][-1] != run_id:
+                    group["run_ids"].append(run_id)
+                for value in (
+                    suite_key,
+                    suite_label,
+                    case["name"],
+                    case["classname"],
+                    case["status"],
+                    *case["features"],
+                    case["message"],
+                    detail_preview,
+                    case["source_path"],
+                    case["source_symbol"],
+                ):
+                    group["words"] |= search_words(value)
+
+    # Keep every version of a test next to each other; it compresses best.
+    rows = sorted(
+        groups.values(),
+        key=lambda row: (row["suite_key"], row["classname"], row["source_symbol"], row["test_name"], row["latest_run_ordinal"]),
+    )
+    for content_id, row in enumerate(rows):
+        words = row.pop("words")
+        row["content_id"] = content_id
+        row["search_text"] = f" {' '.join(sorted(words))} "
+        row["run_count"] = len(row["run_ids"])
     return rows
 
 
-def build_global_search_rows(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for run in sorted(runs, key=lambda item: string_field(item.get("started_at")), reverse=True):
-        case_rows_by_suite = {
-            suite_key: build_case_rows(run, suite_key, suite)
-            for suite_key, suite in sorted(run.get("suites", {}).items())
-        }
-        rows.extend(build_search_rows(case_rows_by_suite))
-    return rows
+def write_search_cases(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Brotli compresses this text-heavy file about a third smaller than Zstandard.
+    with pq.ParquetWriter(
+        path,
+        SEARCH_CASES_SCHEMA,
+        compression="brotli",
+        compression_level=11,
+        use_dictionary=SEARCH_DICTIONARY_COLUMNS,
+        write_page_index=True,
+        data_page_size=16 * 1024,
+    ) as writer:
+        suite_keys = sorted({row["suite_key"] for row in rows})
+        if not suite_keys:
+            writer.write_table(SEARCH_CASES_SCHEMA.empty_table())
+        for suite_key in suite_keys:
+            # One row group per suite, so a suite filter skips the others entirely.
+            suite_rows = [row for row in rows if row["suite_key"] == suite_key]
+            writer.write_table(pa.Table.from_pylist(suite_rows, schema=SEARCH_CASES_SCHEMA))
 
 
 def level_for_line(line: str) -> str | None:
@@ -678,18 +749,11 @@ def write_run_dataset(
     write_parquet(features_path, feature_rows, FEATURES_SCHEMA)
     records.append(file_record(data_dir, run_id, features_path, "features", len(feature_rows)))
 
-    case_rows_by_suite: dict[str, list[dict[str, Any]]] = {}
     for suite_key, suite in sorted(run.get("suites", {}).items()):
         rows = build_case_rows(run, suite_key, suite)
-        case_rows_by_suite[suite_key] = rows
         cases_path = run_dir / f"cases-{suite_file_stem(suite_key)}.parquet"
         write_parquet(cases_path, rows, CASES_SCHEMA)
         records.append(file_record(data_dir, run_id, cases_path, "cases", len(rows), suite_key=suite_key))
-
-    search_path = run_dir / "search-rows.parquet"
-    search_rows = build_search_rows(case_rows_by_suite)
-    write_parquet(search_path, search_rows, SEARCH_ROWS_SCHEMA)
-    records.append(file_record(data_dir, run_id, search_path, "search_rows", len(search_rows)))
 
     log_files_path = run_dir / "log-files.parquet"
     log_file_rows: list[dict[str, Any]] = []
@@ -749,12 +813,10 @@ def write_pages_parquet_dataset(
         run_id = string_field(run.get("run_id") or run.get("id"))
         file_records.extend(write_run_dataset(run, data_dir, raw_roots_by_run_id.get(run_id)))
 
-    search_dir = data_dir / "search"
-    search_dir.mkdir(parents=True, exist_ok=True)
-    global_search_path = search_dir / "index.parquet"
-    global_search_rows = build_global_search_rows(runs_newest_first)
-    write_parquet(global_search_path, global_search_rows, SEARCH_ROWS_SCHEMA)
-    file_records.append(file_record(data_dir, "", global_search_path, "search_index", len(global_search_rows)))
+    search_path = data_dir / SEARCH_CASES_PATH
+    search_rows = build_search_case_rows(runs)
+    write_search_cases(search_path, search_rows)
+    file_records.append(file_record(data_dir, "", search_path, "search_cases", len(search_rows)))
 
     write_parquet(catalog_dir / "runs.parquet", build_catalog_runs(runs), CATALOG_RUNS_SCHEMA)
     write_parquet(

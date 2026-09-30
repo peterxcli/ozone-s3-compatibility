@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import shutil
@@ -18,7 +17,6 @@ from parquet_run import read_run_dataset, write_pages_parquet_dataset
 
 DEFAULT_S3_TESTS_ARGS = "s3tests/functional"
 INDEX_RUN_CHUNK_SIZE = 10
-SEARCH_INDEX_ROW_CHUNK_SIZE = 5000
 
 
 def parse_args() -> argparse.Namespace:
@@ -330,194 +328,8 @@ def write_partitioned_index(index_payload: dict[str, Any], data_dir: Path) -> No
     write_json(data_dir / "index.json", manifest)
 
 
-def partition_search_index_payload(
-    search_payload: dict[str, Any],
-    row_chunk_size: int = SEARCH_INDEX_ROW_CHUNK_SIZE,
-) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    if row_chunk_size <= 0:
-        raise ValueError("row_chunk_size must be greater than zero")
-
-    shards: dict[str, dict[str, Any]] = {}
-    row_paths: list[str] = []
-    rows = search_payload.get("rows", [])
-    for chunk_index, offset in enumerate(range(0, len(rows), row_chunk_size)):
-        path = f"search/rows-{chunk_index:03d}.json"
-        row_paths.append(path)
-        shards[path] = {"rows": rows[offset : offset + row_chunk_size]}
-
-    manifest = {
-        "schema_version": 2,
-        "partitioned": True,
-        "generated_at": search_payload.get("generated_at", ""),
-        "index_id": search_payload.get("index_id", ""),
-        "row_count": len(rows),
-        "partitions": {
-            "rows": row_paths,
-        },
-    }
-
-    return manifest, shards
-
-
-def write_partitioned_search_index(search_payload: dict[str, Any], data_dir: Path) -> None:
-    manifest, shards = partition_search_index_payload(search_payload)
-    for relative_path, shard_payload in shards.items():
-        write_json(data_dir / relative_path, shard_payload)
-    write_json(data_dir / "search-index.json", manifest)
-
-
-def search_text(*values: Any) -> str:
-    parts: list[str] = []
-    for value in values:
-        if value is None:
-            continue
-        if isinstance(value, list):
-            parts.extend(str(item) for item in value if item)
-        else:
-            text = str(value)
-            if text:
-                parts.append(text)
-    return " ".join(parts)
-
-
-def search_variants(value: Any) -> str:
-    text = search_text(value)
-    if not text:
-        return ""
-    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
-    spaced = re.sub(r"[_/.-]+", " ", spaced)
-    return search_text(text, spaced)
-
-
-def case_source_ref(source: dict[str, Any]) -> str:
-    commit = str(source.get("commit") or "")
-    if commit and commit != "unknown":
-        return commit
-    return str(source.get("ref") or "")
-
-
-def strip_test_params(name: str) -> str:
-    return name.strip().split("[", 1)[0]
-
-
-def s3_source_path(classname: str) -> str:
-    if not classname:
-        return ""
-    return f"{classname.replace('.', '/')}.py"
-
-
-def fallback_source_snippet(suite_key: str, suite_label: str, case: dict[str, Any]) -> str:
-    test_name = str(case.get("name") or "").strip()
-    classname = str(case.get("classname") or "").strip()
-    if suite_key == "mint":
-        lines = [
-            "# Mint test case",
-            f"target={classname}" if classname else "",
-            f"function={test_name}" if test_name else "",
-        ]
-        return "\n".join(line for line in lines if line)
-    return f"# {suite_label} test case\n{test_name}".strip()
-
-
-def case_source_info(run: dict[str, Any], suite_key: str, suite_label: str, case: dict[str, Any]) -> dict[str, str]:
-    test_name = str(case.get("name") or "").strip()
-    classname = str(case.get("classname") or "").strip()
-    sources = run.get("sources", {})
-    source = sources.get(suite_key, {}) if isinstance(sources, dict) else {}
-
-    if suite_key == "s3_tests":
-        return {
-            "sourceLanguage": "python",
-            "sourcePath": s3_source_path(classname),
-            "sourceSymbol": strip_test_params(test_name),
-            "sourceRef": case_source_ref(source),
-            "sourceRepo": str(source.get("repo") or ""),
-            "sourceSnippet": "",
-        }
-
-    return {
-        "sourceLanguage": "shell" if suite_key == "mint" else "text",
-        "sourcePath": "",
-        "sourceSymbol": strip_test_params(test_name),
-        "sourceRef": case_source_ref(source),
-        "sourceRepo": str(source.get("repo") or ""),
-        "sourceSnippet": fallback_source_snippet(suite_key, suite_label, case),
-    }
-
-
-def case_search_text(row: dict[str, Any]) -> str:
-    return search_text(
-        search_variants(row["suiteKey"]),
-        search_variants(row["suiteLabel"]),
-        search_variants(row["testName"]),
-        search_variants(row["classname"]),
-        search_variants(row["status"]),
-        search_variants(row["features"]),
-        search_variants(row["message"]),
-        search_variants(row["detail"]),
-        search_variants(row["runId"]),
-        search_variants(row["runStartedAt"]),
-        search_variants(row["runFinishedAt"]),
-        search_variants(row["runFile"]),
-        search_variants(row["sourcePath"]),
-        search_variants(row["sourceSymbol"]),
-    )
-
-
 def string_field(value: Any) -> str:
     return str(value or "").strip()
-
-
-def build_search_index(runs: list[dict[str, Any]]) -> dict[str, Any]:
-    sorted_runs = sorted(runs, key=lambda item: item.get("started_at", ""), reverse=True)
-    rows: list[dict[str, Any]] = []
-
-    for run_ordinal, run in enumerate(sorted_runs):
-        run_id = str(run.get("run_id") or run.get("id") or "")
-        run_started_at = str(run.get("started_at") or "")
-        run_finished_at = str(run.get("finished_at") or run_started_at)
-        run_file = f"data/runs/{run_id}.json"
-        is_latest_run = run_ordinal == 0
-
-        for suite_key, suite in run.get("suites", {}).items():
-            suite_label = str(suite.get("label") or suite_key.replace("_", "-"))
-            cases = suite.get("cases") or suite.get("non_passing_cases") or []
-            for case in cases:
-                row = {
-                    "id": len(rows) + 1,
-                    "suiteKey": suite_key,
-                    "suiteLabel": suite_label,
-                    "testName": string_field(case.get("name")),
-                    "classname": string_field(case.get("classname")),
-                    "status": string_field(case.get("status") or "unknown"),
-                    "features": [str(feature).strip() for feature in case.get("features", []) if str(feature).strip()],
-                    "message": string_field(case.get("message")),
-                    "detail": string_field(case.get("detail")),
-                    "runId": run_id,
-                    "runStartedAt": run_started_at,
-                    "runFinishedAt": run_finished_at,
-                    "runFile": run_file,
-                    "isLatestRun": is_latest_run,
-                    "runOrdinal": run_ordinal,
-                    **case_source_info(run, suite_key, suite_label, case),
-                }
-                row["searchText"] = case_search_text(row)
-                rows.append(row)
-
-    generated_at = ""
-    if sorted_runs:
-        generated_at = sorted_runs[0].get("finished_at") or sorted_runs[0].get("started_at") or ""
-    index_hash = hashlib.sha256(
-        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()[:16]
-
-    return {
-        "schema_version": 1,
-        "generated_at": generated_at,
-        "index_id": f"{generated_at}-{len(rows)}-{index_hash}",
-        "row_count": len(rows),
-        "rows": rows,
-    }
 
 
 def format_preview_timestamp(value: str) -> str:
@@ -761,26 +573,12 @@ def load_existing_runs(existing_runs_dir: Path | None, output_runs_dir: Path) ->
 
 
 def remove_json_report_data(data_dir: Path) -> None:
-    for path in [
-        data_dir / "index.json",
-        data_dir / "search-index.json",
-    ]:
-        if path.exists():
-            path.unlink()
-    for path in [
-        data_dir / "index",
-    ]:
-        if path.exists():
-            shutil.rmtree(path)
-    search_dir = data_dir / "search"
-    if search_dir.exists():
-        for path in search_dir.rglob("*.json"):
-            path.unlink()
-        for path in sorted((path for path in search_dir.rglob("*") if path.is_dir()), reverse=True):
-            if not any(path.iterdir()):
-                path.rmdir()
-        if not any(search_dir.iterdir()):
-            search_dir.rmdir()
+    index_file = data_dir / "index.json"
+    if index_file.exists():
+        index_file.unlink()
+    index_dir = data_dir / "index"
+    if index_dir.exists():
+        shutil.rmtree(index_dir)
     for run_file in (data_dir / "runs").glob("*.json"):
         run_file.unlink()
 
@@ -819,7 +617,6 @@ def main() -> None:
     runs = sorted(runs_by_id.values(), key=lambda run: string_field(run.get("started_at")))
     index_payload = build_index(runs)
     write_partitioned_index(index_payload, data_dir)
-    write_partitioned_search_index(build_search_index(runs), data_dir)
     raw_root = raw_root_for_run_path(new_run_path)
     raw_roots = {new_run["run_id"]: raw_root} if raw_root else {}
     write_pages_parquet_dataset(runs, data_dir, raw_roots)

@@ -1,0 +1,86 @@
+[
+  {
+    "id": "2026-05-17T02-15-00Z",
+    "run_id": "2026-05-17T02-15-00Z",
+    "started_at": "2026-05-17T02:15:00Z",
+    "finished_at": "2026-05-17T02:35:00Z",
+    "file": "data/runs/2026-05-17T02-15-00Z.json",
+    "parquet_detail_base_url": "data/runs/2026-05-17T02-15-00Z/",
+    "sources": {
+      "s3_tests": {
+        "repo": "https://github.com/ceph/s3-tests.git",
+        "ref": "main",
+        "commit": "s3commit17"
+      },
+      "mint": {
+        "repo": "https://github.com/minio/mint.git",
+        "ref": "master",
+        "commit": "mintcommit17"
+      }
+    },
+    "suites": {
+      "s3_tests": {
+        "label": "s3-tests"
+      },
+      "mint": {
+        "label": "mint"
+      }
+    }
+  },
+  {
+    "id": "2026-05-16T02-15-00Z",
+    "run_id": "2026-05-16T02-15-00Z",
+    "started_at": "2026-05-16T02:15:00Z",
+    "finished_at": "2026-05-16T02:35:00Z",
+    "file": "data/runs/2026-05-16T02-15-00Z.json",
+    "parquet_detail_base_url": "data/runs/2026-05-16T02-15-00Z/",
+    "sources": {
+      "s3_tests": {
+        "repo": "https://github.com/ceph/s3-tests.git",
+        "ref": "main",
+        "commit": "s3commit16"
+      },
+      "mint": {
+        "repo": "https://github.com/minio/mint.git",
+        "ref": "master",
+        "commit": "mintcommit16"
+      }
+    },
+    "suites": {
+      "s3_tests": {
+        "label": "s3-tests"
+      },
+      "mint": {
+        "label": "mint"
+      }
+    }
+  },
+  {
+    "id": "2026-05-15T02-15-00Z",
+    "run_id": "2026-05-15T02-15-00Z",
+    "started_at": "2026-05-15T02:15:00Z",
+    "finished_at": "2026-05-15T02:35:00Z",
+    "file": "data/runs/2026-05-15T02-15-00Z.json",
+    "parquet_detail_base_url": "data/runs/2026-05-15T02-15-00Z/",
+    "sources": {
+      "s3_tests": {
+        "repo": "https://github.com/ceph/s3-tests.git",
+        "ref": "main",
+        "commit": "s3commit15"
+      },
+      "mint": {
+        "repo": "https://github.com/minio/mint.git",
+        "ref": "master",
+        "commit": "mintcommit15"
+      }
+    },
+    "suites": {
+      "s3_tests": {
+        "label": "s3-tests"
+      },
+      "mint": {
+        "label": "mint"
+      }
+    }
+  }
+]

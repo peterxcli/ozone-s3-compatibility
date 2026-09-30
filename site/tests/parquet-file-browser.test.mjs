@@ -86,8 +86,8 @@ test("loads the Parquet file catalog and adds the catalog files to the hierarchy
         },
         {
           run_id: "",
-          path: "search/index.parquet",
-          kind: "search_index",
+          path: "search/cases.parquet",
+          kind: "search_cases",
           suite_key: "",
           log_source: "",
           row_count: 3,
@@ -175,8 +175,8 @@ test("builds a catalog-first lineage graph from catalog rows to data files", () 
       },
       {
         run_id: "",
-        path: "search/index.parquet",
-        kind: "search_index",
+        path: "search/cases.parquet",
+        kind: "search_cases",
         suite_key: "",
         log_source: "",
         row_count: 3,

@@ -39,12 +39,7 @@ import {
 import { fetchParquetLogLines, isParquetReportEnabled } from "./lib/parquetReport";
 import { fetchParquetFileLineage } from "./lib/parquetFiles";
 import { storedCaseSearchResult } from "./lib/caseResult";
-import {
-  createPersistentSearchSession,
-  fetchParquetSearchIndexPayload,
-  fetchSearchIndexPayload,
-  hydrateParquetSearchResultDetail,
-} from "./lib/search";
+import { createCaseSearchSession, hydrateParquetSearchResultDetail } from "./lib/search";
 import { highlightSearchMatch } from "./lib/searchHighlight";
 import type {
   FeatureComparisonSummary,
@@ -62,7 +57,7 @@ import type {
 import type { ParquetFileRecord, ParquetFileTreeNode } from "./lib/parquetFiles";
 import type { ParquetQueryClient } from "./lib/parquetReport";
 import type { ReportDataFetchOptions } from "./lib/report";
-import type { SearchIndexLoadProgress, SearchIndexPayload, SearchResult, SearchSession } from "./lib/search";
+import type { SearchIndexLoadProgress, SearchResult, SearchSession } from "./lib/search";
 import type { SharedCaseIdentity } from "./lib/shareState";
 import type { ParquetCacheMode } from "./lib/duckdbParquetQueryClient";
 
@@ -122,7 +117,6 @@ const archivedMenuOpen = ref<boolean>(false);
 const pendingNavigationTarget = ref<string>("");
 const searchQuery = ref<string>("");
 const searchSuiteFilter = ref<string>("all");
-const searchIndexPayload = ref<SearchIndexPayload | null>(null);
 const searchSession = ref<SearchSession | null>(null);
 const searchResults = ref<SearchResult[]>([]);
 const searchLoading = ref<boolean>(false);
@@ -191,59 +185,28 @@ const archivedSummaries = computed<RunSummary[]>(() => index.value?.runs?.slice(
 const suiteOrder = computed<string[]>(() => index.value?.suite_order || []);
 const trimmedSearchQuery = computed<string>(() => searchQuery.value.trim());
 const searchActive = computed<boolean>(() => trimmedSearchQuery.value.length > 0);
-const searchIndexLoaded = computed<boolean>(() => Boolean(searchSession.value));
 const searchIndexProgressVisible = computed<boolean>(() => {
   const progress = searchIndexProgress.value;
   return Boolean(progress && progress.phase !== "ready" && progress.phase !== "error");
 });
-const searchIndexProgressPercent = computed<number | null>(() => {
-  const progress = searchIndexProgress.value;
-  if (!progress || progress.totalRows <= 0) {
-    return null;
-  }
-  return Math.max(0, Math.min(100, Math.round((progress.indexedRows / progress.totalRows) * 100)));
-});
 const searchIndexProgressText = computed<string>(() => {
   const progress = searchIndexProgress.value;
-  const rowCount = progress?.totalRows || searchIndexPayload.value?.row_count || 0;
-  const totalRows = rowCount.toLocaleString();
-  const indexedRows = (progress?.indexedRows || 0).toLocaleString();
+  const rowCount = (progress?.rowCount || searchSession.value?.rowCount || 0).toLocaleString();
 
   if (!progress) {
-    return searchIndexLoaded.value && searchIndexPayload.value
-      ? `${searchIndexPayload.value.row_count.toLocaleString()} cases indexed ${
-          searchSession.value?.persistent ? "in IndexedDB" : "in memory"
-        }`
-      : "Search index loads when you search.";
+    return "The DataFusion search engine loads when you search.";
   }
-
-  if (progress.phase === "scheduled") {
-    return "Search index load scheduled.";
+  if (progress.phase === "loading-engine") {
+    return "Loading the DataFusion search engine.";
   }
-  if (progress.phase === "downloading") {
-    return "Downloading search index.";
-  }
-  if (progress.phase === "opening-cache") {
-    return "Opening browser search cache.";
-  }
-  if (progress.phase === "checking-cache") {
-    return "Checking browser search cache.";
-  }
-  if (progress.phase === "indexing") {
-    const location = progress.persistent ? "into IndexedDB" : "in memory";
-    return `Indexing ${indexedRows} of ${totalRows} cases ${location}.`;
-  }
-  if (progress.phase === "saving-cache") {
-    return `Saving ${totalRows} indexed cases to browser cache.`;
+  if (progress.phase === "opening-index") {
+    return "Opening the Parquet search index.";
   }
   if (progress.phase === "ready") {
-    if (progress.fromCache) {
-      return `${totalRows} cases ready from IndexedDB cache.`;
-    }
-    return `${totalRows} cases indexed ${progress.persistent ? "in IndexedDB" : "in memory"}.`;
+    return `${rowCount} distinct cases searchable with DataFusion.`;
   }
 
-  return "Search index load failed.";
+  return "Search engine failed to load.";
 });
 const searchResultSummary = computed<string>(() => {
   const count = searchResults.value.length;
@@ -513,18 +476,15 @@ async function ensureSearchSession(): Promise<SearchSession | null> {
     searchError.value = "";
 
     try {
-      searchIndexProgress.value = {
-        phase: "downloading",
-        indexedRows: 0,
-        totalRows: searchIndexPayload.value?.row_count || 0,
-        persistent: true,
-        fromCache: false,
-      };
-      const payload =
-        searchIndexPayload.value ||
-        (await fetchReportSearchIndexPayload());
-      searchIndexPayload.value = payload;
-      searchSession.value = await createPersistentSearchSession(payload, {
+      const currentIndex = index.value;
+      if (!currentIndex) {
+        throw new Error("The report index is not loaded yet.");
+      }
+      searchSession.value = await createCaseSearchSession({
+        index: currentIndex,
+        searchCasesUrl: new URL(`${reportDataBaseUrl}search/cases.parquet`, window.location.href).toString(),
+        createClient: (cache) =>
+          import("./lib/caseSearchEngine").then((module) => module.createCaseSearchClient(cache)),
         onProgress: (progress) => {
           searchIndexProgress.value = progress;
         },
@@ -532,13 +492,7 @@ async function ensureSearchSession(): Promise<SearchSession | null> {
       return searchSession.value;
     } catch (error) {
       searchError.value = errorMessageOf(error);
-      searchIndexProgress.value = {
-        phase: "error",
-        indexedRows: 0,
-        totalRows: searchIndexPayload.value?.row_count || 0,
-        persistent: true,
-        fromCache: false,
-      };
+      searchIndexProgress.value = { phase: "error", rowCount: 0 };
       return null;
     } finally {
       searchLoading.value = false;
@@ -547,25 +501,6 @@ async function ensureSearchSession(): Promise<SearchSession | null> {
   })();
 
   return searchSessionPromise;
-}
-
-async function fetchReportSearchIndexPayload(): Promise<SearchIndexPayload> {
-  const currentIndex = index.value;
-  const fetchOptions = await reportDataOptions();
-
-  if (fetchOptions.parquet && fetchOptions.parquetClient && currentIndex) {
-    try {
-      return await fetchParquetSearchIndexPayload(
-        currentIndex,
-        fetchOptions.parquetClient,
-        `${reportDataBaseUrl}search/index.parquet`,
-      );
-    } catch (error) {
-      console.warn("Falling back to JSON search index after Parquet search load failed.", error);
-    }
-  }
-
-  return fetchSearchIndexPayload(`${reportDataBaseUrl}search-index.json`);
 }
 
 async function loadParquetFiles(): Promise<void> {
@@ -763,19 +698,15 @@ function syncSearchUrl(result: SearchResult | null = selectedSearchResult.value,
   window.history.replaceState(null, "", nextUrl);
 }
 
+// Search results collapse repeated history, so a shared case is read from its own run.
 async function openSharedSearchCase(selectedCase: SharedCaseIdentity): Promise<void> {
-  const session = await ensureSearchSession();
-  if (!session) {
-    return;
+  const target = findSummaryByRunId(selectedCase.runId);
+  let result: SearchResult | null = null;
+  if (target) {
+    await ensureRunSummaryDetailLoaded(target.summary);
+    const run = target.runIndex === 0 ? latestRun.value : runDetailsById[target.summary.id];
+    result = run ? findRunDetailCaseResult(run, target.summary, selectedCase, target.runIndex) : null;
   }
-
-  const candidates = await session.search(
-    selectedCase.testName,
-    selectedCase.suiteKey || "all",
-    Math.max(SEARCH_RESULT_LIMIT, 500),
-    { dedupe: false },
-  );
-  const result = candidates.find((candidate) => resultMatchesSharedCase(candidate, selectedCase));
   if (!result) {
     searchError.value = `Could not find shared test case ${selectedCase.testName} in run ${selectedCase.runId}.`;
     return;
@@ -1497,22 +1428,9 @@ onBeforeUnmount(() => {
           >
             <div class="search-index-progress-head">
               <span>{{ searchIndexProgressText }}</span>
-              <span v-if="searchIndexProgressPercent !== null" class="mono">
-                {{ searchIndexProgressPercent }}%
-              </span>
             </div>
-            <div
-              class="search-index-progress-track"
-              role="progressbar"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              :aria-valuenow="searchIndexProgressPercent ?? undefined"
-            >
-              <div
-                class="search-index-progress-fill"
-                :class="{ indeterminate: searchIndexProgressPercent === null }"
-                :style="{ width: `${searchIndexProgressPercent ?? 22}%` }"
-              ></div>
+            <div class="search-index-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+              <div class="search-index-progress-fill indeterminate" style="width: 22%"></div>
             </div>
           </div>
 

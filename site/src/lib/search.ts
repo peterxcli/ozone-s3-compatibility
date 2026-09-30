@@ -1,57 +1,4 @@
-import { Index, IndexedDB } from "flexsearch";
-import type { Id } from "flexsearch";
 import type { IndexPayload, RunSummary } from "./types";
-
-export interface SearchIndexRow {
-  id: number;
-  caseId?: string;
-  suiteKey: string;
-  suiteLabel: string;
-  testName: string;
-  classname: string;
-  status: string;
-  features: string[];
-  message: string;
-  detail: string;
-  runId: string;
-  runStartedAt: string;
-  runFinishedAt?: string;
-  runFile: string;
-  isLatestRun: boolean;
-  runOrdinal: number;
-  sourceLanguage?: string;
-  sourcePath?: string;
-  sourceSymbol?: string;
-  sourceRef?: string;
-  sourceRepo?: string;
-  sourceSnippet?: string;
-  searchText: string;
-}
-
-export interface SearchIndexPayload {
-  schema_version: number;
-  generated_at: string;
-  index_id: string;
-  row_count: number;
-  rows: SearchIndexRow[];
-}
-
-export interface PartitionedSearchIndexManifest {
-  schema_version: number;
-  partitioned: true;
-  generated_at: string;
-  index_id: string;
-  row_count: number;
-  partitions: {
-    rows: string[];
-  };
-}
-
-export interface SearchIndexRowsShard {
-  rows: SearchIndexRow[];
-}
-
-export type SearchIndexBootstrapPayload = SearchIndexPayload | PartitionedSearchIndexManifest;
 
 export interface SearchResult {
   id: string;
@@ -79,61 +26,85 @@ export interface SearchResult {
   score: number;
 }
 
-export interface SearchOptions {
-  dedupe?: boolean;
-}
-
-export type SearchIndexLoadPhase =
-  | "scheduled"
-  | "downloading"
-  | "opening-cache"
-  | "checking-cache"
-  | "indexing"
-  | "saving-cache"
-  | "ready"
-  | "error";
+export type SearchIndexLoadPhase = "loading-engine" | "opening-index" | "ready" | "error";
 
 export interface SearchIndexLoadProgress {
   phase: SearchIndexLoadPhase;
-  indexedRows: number;
-  totalRows: number;
-  persistent: boolean;
-  fromCache: boolean;
+  rowCount: number;
 }
 
-export interface SearchSessionOptions {
+export interface CaseSearchFetchStats {
+  requests: number;
+  bytesFetched: number;
+  cacheHits: number;
+}
+
+/** A DataFusion session that can read Parquet files over HTTP. */
+export interface CaseSearchClient {
+  registerParquet(table: string, url: string): Promise<void>;
+  queryRows<T extends Record<string, unknown>>(sql: string): Promise<T[]>;
+  stats(): CaseSearchFetchStats;
+}
+
+/** Creates a client whose HTTP requests use the given cache mode. */
+export type CaseSearchClientFactory = (cache: RequestCache) => Promise<CaseSearchClient>;
+
+/** The WebAssembly `CaseSearchEngine` class exported by `case-search/`. */
+export interface CaseSearchEngineHandle {
+  registerParquet(table: string, url: string): Promise<unknown>;
+  query(sql: string): Promise<unknown>;
+  stats(): unknown;
+}
+
+export interface CaseSearchSessionOptions {
+  index: Pick<IndexPayload, "runs">;
+  /** Absolute URL of `data/search/cases.parquet`. */
+  searchCasesUrl: string;
+  createClient: CaseSearchClientFactory;
   onProgress?: (progress: SearchIndexLoadProgress) => void;
-  progressBatchSize?: number;
 }
 
 export interface SearchSession {
-  persistent: boolean;
-  search: (query: string, suiteFilter?: string, limit?: number, options?: SearchOptions) => Promise<SearchResult[]>;
+  /** Distinct searchable cases: one per test and failure, across all runs. */
+  rowCount: number;
+  search: (query: string, suiteFilter?: string, limit?: number) => Promise<SearchResult[]>;
+  stats: () => CaseSearchFetchStats;
 }
 
 export interface SearchParquetQueryClient {
   queryRows<T extends Record<string, unknown>>(filePath: string, sql: string): Promise<T[]>;
 }
 
-export interface ParquetSearchRow extends Record<string, unknown> {
-  run_id?: unknown;
+export interface SearchCaseRow extends Record<string, unknown> {
+  content_id?: unknown;
   suite_key?: unknown;
   case_id?: unknown;
-  status?: unknown;
-  features?: unknown;
   test_name?: unknown;
   classname?: unknown;
+  status?: unknown;
+  features?: unknown;
   message?: unknown;
   detail_preview?: unknown;
   source_path?: unknown;
   source_symbol?: unknown;
-  search_text?: unknown;
+  run_id?: unknown;
+  run_ordinal?: unknown;
+  score?: unknown;
 }
 
-export interface NormalizeParquetSearchInput {
-  generated_at?: string;
-  runs: RunSummary[];
-  rowsByRunId: Record<string, ParquetSearchRow[]>;
+/** A query token that matches the metadata (id, dates, source commits) of some runs. */
+export interface RunTokenMatch {
+  token: string;
+  runIds: string[];
+}
+
+export interface CaseSearchSqlInput {
+  tokens: string[];
+  suiteFilter?: string;
+  limit: number;
+  runTokens?: RunTokenMatch[];
+  /** Every run id, newest first; run tokens are ignored without them. */
+  runIds?: string[];
 }
 
 interface ParquetCaseDetailRow extends Record<string, unknown> {
@@ -158,59 +129,40 @@ interface SearchToken {
 
 interface SearchField {
   label: string;
-  value: string;
-  weight: number;
   normalized: string;
   compact: string;
 }
 
-interface RankedSearchResult extends SearchResult {
-  runOrdinal: number;
-  flexRank: number;
-}
-
-interface SearchDedupeInfo {
-  key: string;
-}
-
-type SearchIndex = {
-  add: (id: number, content: string) => unknown;
-  search: (query: string, options?: { limit?: number }) => Id[] | Promise<Id[]>;
-  contain: (id: number) => boolean | Promise<boolean>;
-  clear: () => unknown;
-  mount?: (storage: unknown) => Promise<void>;
-  commit?: () => Promise<void>;
-};
-
-const SEARCH_DB_NAME = "ozone-s3-compatibility-search";
-const SEARCH_STORAGE_KEY = "ozone-s3-compatibility-search-index-id";
+export const SEARCH_CASES_TABLE = "search_cases";
+export const STALE_SEARCH_INDEX_MESSAGE = "remote file changed while reading";
 const PARQUET_FILE_REF = "__PARQUET_FILE__";
+const MAX_QUERY_TOKENS = 12;
 const FIELD_ORDER = ["test name", "error message", "suite", "run", "source", "class", "feature", "status"];
-const FIELD_WEIGHTS: Record<string, number> = {
-  "test name": 80,
-  "error message": 50,
-  suite: 40,
-  run: 30,
-  source: 24,
-  class: 15,
-  feature: 10,
-  status: 6,
-};
 
-const FLEXSEARCH_OPTIONS = {
-  tokenize: "forward" as const,
-  resolution: 9,
-  cache: 100,
-};
-const DEFAULT_PROGRESS_BATCH_SIZE = 500;
+// Ranking weights per field. Run metadata is the same for every result in a
+// run, and results are ordered by run first, so it never changes the order.
+const SCORED_FIELDS: { weight: number; columns: string[] }[] = [
+  { weight: 80, columns: ["test_name"] },
+  { weight: 50, columns: ["message", "detail_preview"] },
+  { weight: 40, columns: ["suite_key"] },
+  { weight: 24, columns: ["source_path", "source_symbol"] },
+  { weight: 15, columns: ["classname"] },
+  { weight: 6, columns: ["status"] },
+];
 
-async function fetchSearchJson<T>(path: string, errorMessage: string): Promise<T> {
-  const response = await fetch(path, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(errorMessage);
-  }
-  return (await response.json()) as T;
-}
+const RESULT_COLUMNS = [
+  "content_id",
+  "suite_key",
+  "case_id",
+  "test_name",
+  "classname",
+  "status",
+  "features",
+  "message",
+  "detail_preview",
+  "source_path",
+  "source_symbol",
+];
 
 function asString(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
@@ -249,8 +201,8 @@ function runIdForSummary(summary: Pick<RunSummary, "id" | "run_id">): string {
   return asString(summary.run_id || summary.id);
 }
 
-function sourceRef(summary: RunSummary, suiteKey: string): string {
-  const source = summary.sources?.[suiteKey];
+function sourceRef(summary: RunSummary | undefined, suiteKey: string): string {
+  const source = summary?.sources?.[suiteKey];
   const commit = asString(source?.commit);
   if (commit && commit !== "unknown") {
     return commit;
@@ -258,8 +210,8 @@ function sourceRef(summary: RunSummary, suiteKey: string): string {
   return asString(source?.ref);
 }
 
-function sourceRepo(summary: RunSummary, suiteKey: string): string {
-  return asString(summary.sources?.[suiteKey]?.repo);
+function sourceRepo(summary: RunSummary | undefined, suiteKey: string): string {
+  return asString(summary?.sources?.[suiteKey]?.repo);
 }
 
 function sourceLanguage(suiteKey: string): string {
@@ -282,179 +234,6 @@ function fallbackSourceSnippet(suiteKey: string, suiteLabel: string, testName: s
   return `# ${suiteLabel} test case\n${testName}`.trim();
 }
 
-function isPartitionedSearchIndexPayload(
-  payload: SearchIndexBootstrapPayload,
-): payload is PartitionedSearchIndexManifest {
-  return Boolean("partitioned" in payload && payload.partitioned && "partitions" in payload);
-}
-
-function resolveSearchIndexPartitionPath(indexPath: string, partitionPath: string): string {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(partitionPath) || partitionPath.startsWith("/")) {
-    return partitionPath;
-  }
-  if (/^[a-z][a-z0-9+.-]*:/i.test(indexPath)) {
-    return new URL(partitionPath, indexPath).toString();
-  }
-
-  const queryStart = indexPath.search(/[?#]/);
-  const pathWithoutQuery = queryStart === -1 ? indexPath : indexPath.slice(0, queryStart);
-  const lastSlash = pathWithoutQuery.lastIndexOf("/");
-  const basePath = lastSlash === -1 ? "" : indexPath.slice(0, lastSlash + 1);
-  return `${basePath}${partitionPath}`;
-}
-
-export async function fetchSearchIndexPayload(indexPath: string): Promise<SearchIndexPayload> {
-  const payload = await fetchSearchJson<SearchIndexBootstrapPayload>(indexPath, "Failed to load search index");
-  if (!isPartitionedSearchIndexPayload(payload)) {
-    return payload;
-  }
-
-  const rowShards = await Promise.all(
-    payload.partitions.rows.map((path) =>
-      fetchSearchJson<SearchIndexRowsShard>(
-        resolveSearchIndexPartitionPath(indexPath, path),
-        `Failed to load search index shard ${path}`,
-      )
-    )
-  );
-  const rows = rowShards.flatMap((shard) => shard.rows || []);
-
-  return {
-    schema_version: 1,
-    generated_at: payload.generated_at,
-    index_id: payload.index_id,
-    row_count: payload.row_count || rows.length,
-    rows,
-  };
-}
-
-function parquetSearchSql(orderBy = ""): string {
-  const orderClause = orderBy ? ` ORDER BY ${orderBy}` : "";
-  return `SELECT * FROM read_parquet(${PARQUET_FILE_REF})${orderClause}`;
-}
-
-function caseDetailSql(caseId: string): string {
-  return `SELECT * FROM read_parquet(${PARQUET_FILE_REF}) WHERE case_id = ${sqlString(caseId)} LIMIT 1`;
-}
-
-function parquetSearchText(row: SearchIndexRow, parquetSearchTextValue: unknown): string {
-  return [
-    asString(parquetSearchTextValue),
-    row.suiteLabel,
-    row.runId,
-    row.runStartedAt,
-    row.runFinishedAt,
-    row.runFile,
-    row.sourcePath,
-    row.sourceSymbol,
-    row.sourceRepo,
-    row.sourceRef,
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function normalizeParquetSearchRow(
-  row: ParquetSearchRow,
-  summary: RunSummary,
-  runOrdinal: number,
-  rowId: number,
-): SearchIndexRow {
-  const runId = asString(row.run_id || runIdForSummary(summary));
-  const suiteKey = asString(row.suite_key);
-  const suiteLabel = asString(summary.suites?.[suiteKey]?.label || suiteKey.replace(/_/g, "-"));
-  const testName = asString(row.test_name);
-  const classname = asString(row.classname);
-  const normalized: SearchIndexRow = {
-    id: rowId,
-    caseId: asString(row.case_id) || undefined,
-    suiteKey,
-    suiteLabel,
-    testName,
-    classname,
-    status: asString(row.status || "unknown"),
-    features: asStringArray(row.features),
-    message: asString(row.message),
-    detail: asString(row.detail_preview),
-    runId,
-    runStartedAt: asString(summary.started_at),
-    runFinishedAt: asString(summary.finished_at || summary.started_at),
-    runFile: asString(summary.file || `data/runs/${runId}.json`),
-    isLatestRun: runOrdinal === 0,
-    runOrdinal,
-    sourceLanguage: sourceLanguage(suiteKey),
-    sourcePath: asString(row.source_path),
-    sourceSymbol: asString(row.source_symbol),
-    sourceRef: sourceRef(summary, suiteKey),
-    sourceRepo: sourceRepo(summary, suiteKey),
-    sourceSnippet: suiteKey === "s3_tests" ? "" : fallbackSourceSnippet(suiteKey, suiteLabel, testName, classname),
-    searchText: "",
-  };
-  normalized.searchText = parquetSearchText(normalized, row.search_text);
-  return normalized;
-}
-
-export function normalizeParquetSearchIndex(input: NormalizeParquetSearchInput): SearchIndexPayload {
-  const rows: SearchIndexRow[] = [];
-  input.runs.forEach((summary, runOrdinal) => {
-    const runId = runIdForSummary(summary);
-    (input.rowsByRunId[runId] || []).forEach((row) => {
-      rows.push(normalizeParquetSearchRow(row, summary, runOrdinal, rows.length + 1));
-    });
-  });
-
-  const generatedAt =
-    input.generated_at ||
-    asString(input.runs[0]?.finished_at || input.runs[0]?.started_at);
-  const digest = digestParts(
-    rows.map((row) =>
-      [
-        row.runId,
-        row.suiteKey,
-        row.caseId || "",
-        row.status,
-        row.message,
-        row.detail,
-        row.searchText,
-      ].join("\0")
-    )
-  );
-
-  return {
-    schema_version: 1,
-    generated_at: generatedAt,
-    index_id: `parquet-search-${generatedAt}-${rows.length}-${digest}`,
-    row_count: rows.length,
-    rows,
-  };
-}
-
-export async function fetchParquetSearchIndexPayload(
-  index: IndexPayload,
-  client: SearchParquetQueryClient,
-  searchIndexPath = "data/search/index.parquet",
-): Promise<SearchIndexPayload> {
-  const rows = await client.queryRows<ParquetSearchRow>(
-    searchIndexPath,
-    parquetSearchSql("run_id, suite_key, classname, test_name"),
-  );
-  const rowsByRunId: Record<string, ParquetSearchRow[]> = {};
-  rows.forEach((row) => {
-    const runId = asString(row.run_id);
-    if (!runId) {
-      return;
-    }
-    rowsByRunId[runId] = rowsByRunId[runId] || [];
-    rowsByRunId[runId].push(row);
-  });
-
-  return normalizeParquetSearchIndex({
-    generated_at: index.generated_at,
-    runs: index.runs,
-    rowsByRunId,
-  });
-}
-
 function normalizeText(value: string | null | undefined): string {
   return String(value || "")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -468,145 +247,299 @@ function compactText(value: string): string {
   return value.replace(/\s+/g, "");
 }
 
-function comparableText(value: string | null | undefined): string {
-  return String(value || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
+function isShortNumber(token: string): boolean {
+  return /^\d{1,2}$/.test(token);
 }
 
-function comparableContentText(value: string | null | undefined): string {
-  return comparableText(value)
-    .replace(/0x[0-9a-f]+/g, "0x...")
-    .replace(/\b([\w./-]+\.[a-z0-9]+):\d+/g, "$1:<line>");
+/** Lowercase alphanumeric query words, matching how `search_text` is built. */
+export function searchQueryTokens(query: string): string[] {
+  return Array.from(new Set(normalizeText(query).split(" ").filter(Boolean))).slice(0, MAX_QUERY_TOKENS);
 }
 
-function digestParts(parts: string[]): string {
-  const content = parts.map((part) => `${part.length}:${part}`).join("|");
-  let hash = 2166136261;
-
-  for (let index = 0; index < content.length; index += 1) {
-    hash ^= content.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return `${content.length.toString(36)}-${(hash >>> 0).toString(36)}`;
-}
-
-function searchTokens(query: string): SearchToken[] {
-  return normalizeText(query)
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((text) => ({ text, compact: compactText(text) }));
-}
-
-function rowIdentityDigest(row: SearchIndexRow): string {
-  const suiteKey = comparableText(row.suiteKey);
-  const sourcePath = comparableText(row.sourcePath);
-  const sourceSymbol = comparableText(row.sourceSymbol);
-
-  if (sourcePath || sourceSymbol) {
-    return digestParts(["source", suiteKey, sourcePath, sourceSymbol]);
-  }
-
-  return digestParts(["case", suiteKey, comparableText(row.classname), comparableText(row.testName)]);
-}
-
-function rowContentDigest(row: SearchIndexRow): string {
-  const features = (row.features || []).map((feature) => comparableContentText(feature)).sort().join(" ");
-  return digestParts([
-    comparableContentText(row.status),
-    features,
-    comparableContentText(row.message),
-    comparableContentText(row.detail),
-    comparableContentText(row.sourceSnippet),
-  ]);
-}
-
-function rowDedupeInfo(row: SearchIndexRow): SearchDedupeInfo {
-  return {
-    key: `${rowIdentityDigest(row)}:${rowContentDigest(row)}`,
-  };
+function searchTokens(tokens: string[]): SearchToken[] {
+  return tokens.map((text) => ({ text, compact: compactText(text) }));
 }
 
 function makeField(label: string, value: string | null | undefined): SearchField {
   const normalized = normalizeText(value);
-  return {
-    label,
-    value: String(value || ""),
-    weight: FIELD_WEIGHTS[label] || 1,
-    normalized,
-    compact: compactText(normalized),
-  };
+  return { label, normalized, compact: compactText(normalized) };
 }
 
 function fieldMatchesToken(field: SearchField, token: SearchToken): boolean {
-  if (/^\d{1,2}$/.test(token.text)) {
+  if (isShortNumber(token.text)) {
     return field.normalized.split(" ").includes(token.text);
   }
   return field.normalized.includes(token.text) || field.compact.includes(token.compact);
 }
 
-function rowFields(row: SearchIndexRow): SearchField[] {
+function resultFields(result: SearchResult): SearchField[] {
   return [
-    makeField("test name", row.testName),
-    makeField("error message", `${row.message || ""} ${row.detail || ""}`),
-    makeField("suite", `${row.suiteKey} ${row.suiteLabel}`),
-    makeField("run", `${row.runId} ${row.runStartedAt} ${row.runFinishedAt || ""} ${row.runFile}`),
-    makeField("source", `${row.sourcePath || ""} ${row.sourceSymbol || ""}`),
-    makeField("class", row.classname),
-    makeField("feature", (row.features || []).join(" ")),
-    makeField("status", row.status),
+    makeField("test name", result.testName),
+    makeField("error message", `${result.message || ""} ${result.detail || ""}`),
+    makeField("suite", `${result.suiteKey} ${result.suiteLabel}`),
+    makeField("run", `${result.runId} ${result.runStartedAt} ${result.runFinishedAt || ""}`),
+    makeField("source", `${result.sourcePath || ""} ${result.sourceSymbol || ""}`),
+    makeField("class", result.classname),
+    makeField("feature", (result.features || []).join(" ")),
+    makeField("status", result.status),
   ];
 }
 
-function uniqueMatchedFields(fields: SearchField[], tokens: SearchToken[]): string[] {
-  const matches = new Set<string>();
-  fields.forEach((field) => {
-    if (tokens.some((token) => fieldMatchesToken(field, token))) {
-      matches.add(field.label);
-    }
-  });
+function matchedFieldsForResult(result: SearchResult, tokens: SearchToken[]): string[] {
+  const matches = new Set(
+    resultFields(result)
+      .filter((field) => tokens.some((token) => fieldMatchesToken(field, token)))
+      .map((field) => field.label),
+  );
   return FIELD_ORDER.filter((label) => matches.has(label));
 }
 
-function scoreMatch(fields: SearchField[], tokens: SearchToken[]): number {
-  return fields.reduce((score, field) => {
-    const tokenMatches = tokens.filter((token) => fieldMatchesToken(field, token)).length;
-    if (!tokenMatches) return score;
-    return score + field.weight + tokenMatches;
-  }, 0);
+function runSearchWords(summary: RunSummary): string[] {
+  const commits = Object.keys(summary.sources || {}).map((suiteKey) => sourceRef(summary, suiteKey));
+  return normalizeText([runIdForSummary(summary), summary.started_at, summary.finished_at, ...commits].join(" ")).split(" ");
 }
 
-function searchResultForRow(row: SearchIndexRow, tokens: SearchToken[], flexRank: number): RankedSearchResult {
-  const fields = rowFields(row);
-  return {
-    id: String(row.id),
-    caseId: row.caseId,
-    suiteKey: row.suiteKey,
-    suiteLabel: row.suiteLabel,
-    testName: row.testName,
-    classname: row.classname,
-    status: row.status,
-    features: row.features || [],
-    message: row.message || "",
-    detail: row.detail || "",
-    runId: row.runId,
-    runStartedAt: row.runStartedAt,
-    runFinishedAt: row.runFinishedAt,
-    runFile: row.runFile,
-    isLatestRun: row.isLatestRun,
-    sourceLanguage: row.sourceLanguage,
-    sourcePath: row.sourcePath,
-    sourceSymbol: row.sourceSymbol,
-    sourceRef: row.sourceRef,
-    sourceRepo: row.sourceRepo,
-    sourceSnippet: row.sourceSnippet,
-    matchedFields: uniqueMatchedFields(fields, tokens),
-    score: scoreMatch(fields, tokens),
-    runOrdinal: row.runOrdinal,
-    flexRank,
+/** Finds query tokens that name runs, such as a run id, date, or source commit. */
+export function runTokenMatches(tokens: string[], runs: RunSummary[]): RunTokenMatch[] {
+  const runWords = runs.map((summary) => ({ runId: runIdForSummary(summary), words: runSearchWords(summary) }));
+  return tokens
+    .map((token) => ({
+      token,
+      runIds: runWords
+        .filter(({ words }) =>
+          words.some((word) => (isShortNumber(token) ? word === token : word.startsWith(token))),
+        )
+        .map(({ runId }) => runId),
+    }))
+    .filter(({ runIds }) => runIds.length > 0);
+}
+
+/** `search_text` holds space-delimited words, so this is a word-prefix match. */
+function tokenCondition(token: string): string {
+  const pattern = isShortNumber(token) ? `% ${token} %` : `% ${token}%`;
+  return `search_text LIKE ${sqlString(pattern)}`;
+}
+
+function scoreSql(tokens: string[]): string {
+  return SCORED_FIELDS.map(({ weight, columns }) => {
+    const matches = tokens.map(
+      (token) => `(${columns.map((column) => `COALESCE(${column}, '') ILIKE ${sqlString(`%${token}%`)}`).join(" OR ")})`,
+    );
+    const counts = matches.map((match) => `CAST(${match} AS INT)`).join(" + ");
+    return `(CASE WHEN ${matches.join(" OR ")} THEN ${weight} ELSE 0 END + ${counts})`;
+  }).join(" + ");
+}
+
+function suiteCondition(suiteFilter = "all"): string[] {
+  return suiteFilter && suiteFilter !== "all" ? [`suite_key = ${sqlString(suiteFilter)}`] : [];
+}
+
+function positiveLimit(limit: number): number {
+  return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 1;
+}
+
+/**
+ * Builds the DataFusion query. Filters on `search_text` are pushed into the
+ * Parquet scan, so only pages holding matches are fetched for other columns.
+ */
+export function buildCaseSearchSql({ tokens, suiteFilter = "all", limit, runTokens = [], runIds = [] }: CaseSearchSqlInput): string {
+  // A token naming every run is satisfied by any case, like "2026" in a date.
+  // A token naming some runs is satisfied by the case text or by those runs.
+  const knownRunTokens = runIds.length ? runTokens : [];
+  const runTokenSet = new Set(knownRunTokens.map(({ token }) => token));
+  const narrowingTokens = knownRunTokens.filter(({ runIds: matching }) => matching.length < runIds.length);
+  const contentConditions = [
+    ...suiteCondition(suiteFilter),
+    ...tokens.filter((token) => !runTokenSet.has(token)).map(tokenCondition),
+  ];
+  const where = contentConditions.length ? `WHERE ${contentConditions.join(" AND ")}` : "";
+  const score = scoreSql(tokens);
+  const safeLimit = positiveLimit(limit);
+
+  if (!narrowingTokens.length) {
+    return [
+      `SELECT ${RESULT_COLUMNS.join(", ")}, latest_run_id AS run_id, latest_run_ordinal AS run_ordinal, ${score} AS score`,
+      `FROM ${SEARCH_CASES_TABLE}`,
+      where,
+      "ORDER BY run_ordinal, score DESC, suite_key, test_name, content_id",
+      `LIMIT ${safeLimit}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  // Tokens that name runs may be satisfied by the case text or by the run a
+  // case appeared in. Expand each case into its runs and keep the newest run
+  // that satisfies every such token.
+  const tokenFlags = narrowingTokens.map(({ token }, index) => `${tokenCondition(token)} AS token_${index}`);
+  const occurrenceConditions = narrowingTokens.map(
+    ({ runIds: matchingRunIds }, index) =>
+      `(token_${index} OR occurrences.run_id IN (${matchingRunIds.map(sqlString).join(", ")}))`,
+  );
+  const runOrdinals = runIds.map((runId, ordinal) => `(${sqlString(runId)}, ${ordinal})`).join(", ");
+  const tokenColumns = narrowingTokens.map((_, index) => `token_${index}`).join(", ");
+
+  return [
+    "WITH candidates AS (",
+    `  SELECT ${RESULT_COLUMNS.join(", ")}, run_ids, ${score} AS score, ${tokenFlags.join(", ")}`,
+    `  FROM ${SEARCH_CASES_TABLE}`,
+    where ? `  ${where}` : "",
+    "), occurrences AS (",
+    `  SELECT content_id, unnest(run_ids) AS run_id, ${tokenColumns} FROM candidates`,
+    "), matched AS (",
+    "  SELECT occurrences.content_id, MIN(runs.run_ordinal) AS run_ordinal",
+    `  FROM occurrences JOIN (VALUES ${runOrdinals}) AS runs(run_id, run_ordinal) ON occurrences.run_id = runs.run_id`,
+    `  WHERE ${occurrenceConditions.join(" AND ")}`,
+    "  GROUP BY occurrences.content_id",
+    ")",
+    `SELECT ${RESULT_COLUMNS.map((column) => `candidates.${column}`).join(", ")}, matched.run_ordinal, candidates.score`,
+    "FROM candidates JOIN matched ON candidates.content_id = matched.content_id",
+    "ORDER BY matched.run_ordinal, candidates.score DESC, candidates.suite_key, candidates.test_name, candidates.content_id",
+    `LIMIT ${safeLimit}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Converts a search row into a displayable result. Rows carry either the run
+ * id (newest occurrence) or the ordinal of a run in `runs` (run-token queries).
+ */
+export function searchResultFromRow(row: SearchCaseRow, runs: RunSummary[], tokens: string[]): SearchResult {
+  const rowRunId = asString(row.run_id);
+  const summary = rowRunId
+    ? runs.find((candidate) => runIdForSummary(candidate) === rowRunId)
+    : runs[Number(row.run_ordinal)];
+  const runId = rowRunId || (summary ? runIdForSummary(summary) : "");
+  const suiteKey = asString(row.suite_key);
+  const suiteLabel = asString(summary?.suites?.[suiteKey]?.label || suiteFileStem(suiteKey));
+  const testName = asString(row.test_name);
+  const classname = asString(row.classname);
+
+  const result: SearchResult = {
+    id: `search:${asString(row.content_id)}`,
+    caseId: asString(row.case_id) || undefined,
+    suiteKey,
+    suiteLabel,
+    testName,
+    classname,
+    status: asString(row.status || "unknown"),
+    features: asStringArray(row.features),
+    message: asString(row.message),
+    detail: asString(row.detail_preview),
+    runId,
+    runStartedAt: asString(summary?.started_at),
+    runFinishedAt: asString(summary?.finished_at || summary?.started_at),
+    runFile: asString(summary?.file || (runId ? `data/runs/${runId}.json` : "")),
+    isLatestRun: Boolean(summary) && summary === runs[0],
+    sourceLanguage: sourceLanguage(suiteKey),
+    sourcePath: asString(row.source_path),
+    sourceSymbol: asString(row.source_symbol),
+    sourceRef: sourceRef(summary, suiteKey),
+    sourceRepo: sourceRepo(summary, suiteKey),
+    sourceSnippet: suiteKey === "s3_tests" ? "" : fallbackSourceSnippet(suiteKey, suiteLabel, testName, classname),
+    matchedFields: [],
+    score: Number(row.score) || 0,
   };
+  result.matchedFields = matchedFieldsForResult(result, searchTokens(tokens));
+  return result;
+}
+
+export function caseSearchClientFromEngine(engine: CaseSearchEngineHandle): CaseSearchClient {
+  return {
+    async registerParquet(table, url) {
+      await engine.registerParquet(table, url);
+    },
+    async queryRows<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
+      return JSON.parse(asString(await engine.query(sql))) as T[];
+    },
+    stats() {
+      const stats = (engine.stats() || {}) as Partial<CaseSearchFetchStats>;
+      return {
+        requests: Number(stats.requests) || 0,
+        bytesFetched: Number(stats.bytesFetched) || 0,
+        cacheHits: Number(stats.cacheHits) || 0,
+      };
+    },
+  };
+}
+
+function isStaleIndexError(error: unknown): boolean {
+  return String(error instanceof Error ? error.message : error).includes(STALE_SEARCH_INDEX_MESSAGE);
+}
+
+function reportProgress(options: CaseSearchSessionOptions, progress: SearchIndexLoadProgress): void {
+  options.onProgress?.(progress);
+}
+
+/**
+ * Opens the published search cases file in DataFusion. Nothing is downloaded
+ * up front beyond the Parquet footer; each search fetches the byte ranges it
+ * needs and keeps them in memory for later searches.
+ */
+export async function createCaseSearchSession(options: CaseSearchSessionOptions): Promise<SearchSession> {
+  reportProgress(options, { phase: "loading-engine", rowCount: 0 });
+  let client = await options.createClient("default");
+
+  async function open(nextClient: CaseSearchClient): Promise<number> {
+    await nextClient.registerParquet(SEARCH_CASES_TABLE, options.searchCasesUrl);
+    const rows = await nextClient.queryRows<{ row_count?: unknown }>(
+      `SELECT COUNT(*) AS row_count FROM ${SEARCH_CASES_TABLE}`,
+    );
+    return Number(rows[0]?.row_count) || 0;
+  }
+
+  // A republished file must not be mixed with bytes already cached from the
+  // old one; start over with a fresh engine that bypasses the HTTP cache.
+  async function withFreshIndexOnChange<T>(run: (current: CaseSearchClient) => Promise<T>): Promise<T> {
+    try {
+      return await run(client);
+    } catch (error) {
+      if (!isStaleIndexError(error)) {
+        throw error;
+      }
+      client = await options.createClient("reload");
+      session.rowCount = await open(client);
+      return run(client);
+    }
+  }
+
+  const session: SearchSession = {
+    rowCount: 0,
+    async search(query: string, suiteFilter = "all", limit = 120): Promise<SearchResult[]> {
+      const tokens = searchQueryTokens(query);
+      if (!tokens.length) {
+        return [];
+      }
+
+      const runs = options.index.runs || [];
+      const sql = buildCaseSearchSql({
+        tokens,
+        suiteFilter,
+        limit,
+        runTokens: runTokenMatches(tokens, runs),
+        runIds: runs.map(runIdForSummary),
+      });
+      const rows = await withFreshIndexOnChange((current) => current.queryRows<SearchCaseRow>(sql));
+      return rows.map((row) => searchResultFromRow(row, runs, tokens));
+    },
+    stats: () => client.stats(),
+  };
+
+  reportProgress(options, { phase: "opening-index", rowCount: 0 });
+  session.rowCount = await withFreshIndexOnChange(open);
+  reportProgress(options, { phase: "ready", rowCount: session.rowCount });
+  return session;
+}
+
+// Parametrized tests share a case id; prefer the exact test that was shown.
+function caseDetailSql(caseId: string, testName: string): string {
+  return [
+    `SELECT * FROM read_parquet(${PARQUET_FILE_REF})`,
+    `WHERE case_id = ${sqlString(caseId)}`,
+    `ORDER BY name = ${sqlString(testName)} DESC`,
+    "LIMIT 1",
+  ].join(" ");
 }
 
 function summaryForSearchResult(
@@ -631,6 +564,7 @@ function hydratedSourceSnippet(result: SearchResult, row: ParquetCaseDetailRow):
   );
 }
 
+/** Replaces the search preview with the full case detail from the run's case file. */
 export async function hydrateParquetSearchResultDetail(
   result: SearchResult,
   index: Pick<IndexPayload, "runs">,
@@ -648,7 +582,7 @@ export async function hydrateParquetSearchResultDetail(
 
   const rows = await client.queryRows<ParquetCaseDetailRow>(
     parquetDetailPath(summary, `cases-${suiteFileStem(result.suiteKey)}.parquet`),
-    caseDetailSql(caseId),
+    caseDetailSql(caseId, result.testName),
   );
   const row = rows[0];
   if (!row) {
@@ -670,241 +604,4 @@ export async function hydrateParquetSearchResultDetail(
     sourceLanguage: result.sourceLanguage || sourceLanguage(result.suiteKey),
     sourceSnippet: hydratedSourceSnippet(result, row),
   };
-}
-
-function rowsById(payload: SearchIndexPayload): Map<number, SearchIndexRow> {
-  return new Map(payload.rows.map((row) => [row.id, row]));
-}
-
-function dedupeInfoById(payload: SearchIndexPayload): Map<number, SearchDedupeInfo> {
-  return new Map(payload.rows.map((row) => [row.id, rowDedupeInfo(row)]));
-}
-
-function removeDuplicateHistory(
-  results: RankedSearchResult[],
-  dedupeById: Map<number, SearchDedupeInfo>,
-): RankedSearchResult[] {
-  const seen = new Set<string>();
-  return results.filter((result) => {
-    const key = dedupeById.get(Number(result.id))?.key;
-    if (!key) {
-      return true;
-    }
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function progressBatchSize(options: SearchSessionOptions): number {
-  const batchSize = Number(options.progressBatchSize || DEFAULT_PROGRESS_BATCH_SIZE);
-  return Number.isFinite(batchSize) && batchSize > 0 ? Math.floor(batchSize) : DEFAULT_PROGRESS_BATCH_SIZE;
-}
-
-function reportProgress(options: SearchSessionOptions, progress: SearchIndexLoadProgress): void {
-  options.onProgress?.(progress);
-}
-
-async function yieldToBrowser(): Promise<void> {
-  await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
-}
-
-async function addRowsToIndex(
-  index: SearchIndex,
-  rows: SearchIndexRow[],
-  options: SearchSessionOptions,
-  persistent: boolean,
-): Promise<void> {
-  const batchSize = progressBatchSize(options);
-  const shouldReportProgress = Boolean(options.onProgress);
-
-  if (!rows.length) {
-    reportProgress(options, {
-      phase: "indexing",
-      indexedRows: 0,
-      totalRows: 0,
-      persistent,
-      fromCache: false,
-    });
-    return;
-  }
-
-  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-    const row = rows[rowIndex];
-    await Promise.resolve(index.add(row.id, row.searchText));
-
-    const indexedRows = rowIndex + 1;
-    if (indexedRows % batchSize === 0 || indexedRows === rows.length) {
-      reportProgress(options, {
-        phase: "indexing",
-        indexedRows,
-        totalRows: rows.length,
-        persistent,
-        fromCache: false,
-      });
-      if (shouldReportProgress) {
-        await yieldToBrowser();
-      }
-    }
-  }
-}
-
-function safeGetStoredIndexId(): string {
-  try {
-    return window.localStorage.getItem(SEARCH_STORAGE_KEY) || "";
-  } catch {
-    return "";
-  }
-}
-
-function safeSetStoredIndexId(indexId: string): void {
-  try {
-    window.localStorage.setItem(SEARCH_STORAGE_KEY, indexId);
-  } catch {
-    // Search still works without localStorage; it just hydrates again when needed.
-  }
-}
-
-function browserSupportsIndexedDB(): boolean {
-  return typeof window !== "undefined" && typeof window.indexedDB !== "undefined";
-}
-
-async function hydratePersistentIndex(
-  index: SearchIndex,
-  payload: SearchIndexPayload,
-  options: SearchSessionOptions,
-): Promise<void> {
-  const firstRowId = payload.rows[0]?.id;
-  const storedIndexId = safeGetStoredIndexId();
-  reportProgress(options, {
-    phase: "checking-cache",
-    indexedRows: 0,
-    totalRows: payload.rows.length,
-    persistent: true,
-    fromCache: false,
-  });
-  const hasFirstRow = firstRowId === undefined ? true : await Promise.resolve(index.contain(firstRowId));
-
-  if (storedIndexId === payload.index_id && hasFirstRow) {
-    reportProgress(options, {
-      phase: "ready",
-      indexedRows: payload.rows.length,
-      totalRows: payload.rows.length,
-      persistent: true,
-      fromCache: true,
-    });
-    return;
-  }
-
-  await Promise.resolve(index.clear());
-  await addRowsToIndex(index, payload.rows, options, true);
-  reportProgress(options, {
-    phase: "saving-cache",
-    indexedRows: payload.rows.length,
-    totalRows: payload.rows.length,
-    persistent: true,
-    fromCache: false,
-  });
-  await index.commit?.();
-  safeSetStoredIndexId(payload.index_id);
-  reportProgress(options, {
-    phase: "ready",
-    indexedRows: payload.rows.length,
-    totalRows: payload.rows.length,
-    persistent: true,
-    fromCache: false,
-  });
-}
-
-function createSearchSession(payload: SearchIndexPayload, index: SearchIndex, persistent: boolean): SearchSession {
-  const byId = rowsById(payload);
-  const rowDedupeById = dedupeInfoById(payload);
-
-  return {
-    persistent,
-    async search(query: string, suiteFilter = "all", limit = 120, options: SearchOptions = {}): Promise<SearchResult[]> {
-      const tokens = searchTokens(query);
-      if (!tokens.length) {
-        return [];
-      }
-
-      const ids = await Promise.resolve(index.search(query, { limit: payload.rows.length }));
-      const ranked: RankedSearchResult[] = [];
-
-      ids.forEach((id, flexRank) => {
-        const row = byId.get(Number(id));
-        if (!row || (suiteFilter !== "all" && row.suiteKey !== suiteFilter)) {
-          return;
-        }
-        ranked.push(searchResultForRow(row, tokens, flexRank));
-      });
-
-      const sorted = ranked.sort((left, right) => {
-        if (left.runOrdinal !== right.runOrdinal) {
-          return left.runOrdinal - right.runOrdinal;
-        }
-        if (right.score !== left.score) {
-          return right.score - left.score;
-        }
-        if (left.flexRank !== right.flexRank) {
-          return left.flexRank - right.flexRank;
-        }
-        if (left.suiteLabel !== right.suiteLabel) {
-          return left.suiteLabel.localeCompare(right.suiteLabel);
-        }
-        return left.testName.localeCompare(right.testName);
-      });
-
-      const visible = options.dedupe === false ? sorted : removeDuplicateHistory(sorted, rowDedupeById);
-
-      return visible
-        .slice(0, limit)
-        .map(({ runOrdinal: _runOrdinal, flexRank: _flexRank, ...result }) => result);
-    },
-  };
-}
-
-export async function createInMemorySearchSession(
-  payload: SearchIndexPayload,
-  options: SearchSessionOptions = {},
-): Promise<SearchSession> {
-  const index = new Index(FLEXSEARCH_OPTIONS) as unknown as SearchIndex;
-  await addRowsToIndex(index, payload.rows, options, false);
-  reportProgress(options, {
-    phase: "ready",
-    indexedRows: payload.rows.length,
-    totalRows: payload.rows.length,
-    persistent: false,
-    fromCache: false,
-  });
-  return createSearchSession(payload, index, false);
-}
-
-export async function createPersistentSearchSession(
-  payload: SearchIndexPayload,
-  options: SearchSessionOptions = {},
-): Promise<SearchSession> {
-  if (!browserSupportsIndexedDB()) {
-    return createInMemorySearchSession(payload, options);
-  }
-
-  try {
-    const index = new Index({ ...FLEXSEARCH_OPTIONS, commit: false }) as unknown as SearchIndex;
-
-    reportProgress(options, {
-      phase: "opening-cache",
-      indexedRows: 0,
-      totalRows: payload.rows.length,
-      persistent: true,
-      fromCache: false,
-    });
-    await index.mount?.(new IndexedDB(SEARCH_DB_NAME));
-    await hydratePersistentIndex(index, payload, options);
-    return createSearchSession(payload, index, true);
-  } catch (error) {
-    console.warn("Falling back to in-memory search index after IndexedDB setup failed.", error);
-    return createInMemorySearchSession(payload, options);
-  }
 }
