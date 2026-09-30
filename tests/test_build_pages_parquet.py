@@ -101,6 +101,69 @@ class BuildPagesParquetTests(unittest.TestCase):
             catalog = pq.read_table(pages_data / "catalog" / "runs.parquet").to_pylist()
             self.assertEqual([new_run["run_id"], old_run["run_id"]], [row["run_id"] for row in catalog])
 
+    def test_build_pages_keeps_log_index_of_published_run_passed_as_new_run(self) -> None:
+        run = sample_run()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            site_dist = root / "site-dist"
+            site_dist.mkdir()
+            (site_dist / "index.html").write_text("index.html", encoding="utf-8")
+
+            raw_root = root / "raw"
+            log_path = raw_root / "s3-tests" / "pytest.log"
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text("first line\nERROR failed request\n", encoding="utf-8")
+            published_data = root / "pages-repo" / "data"
+            parquet_run.write_pages_parquet_dataset([run], published_data, {run["run_id"]: raw_root})
+            published_run_dir = published_data / "runs" / run["run_id"]
+            published_log_files = pq.read_table(published_run_dir / "log-files.parquet").to_pylist()
+
+            # The Pages UI refresh republishes the newest published run directory as the new run.
+            with mock.patch.object(build_pages, "built_site_dir", return_value=site_dist):
+                with mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "build_pages.py",
+                        "--output-dir",
+                        str(root / "pages"),
+                        "--new-run",
+                        str(published_run_dir),
+                        "--existing-runs-dir",
+                        str(published_data / "runs"),
+                        "--data-format",
+                        "parquet",
+                    ],
+                ):
+                    build_pages.main()
+
+            pages_data = root / "pages" / "data"
+            log_files = pq.read_table(pages_data / "runs" / run["run_id"] / "log-files.parquet").to_pylist()
+            self.assertEqual(1, len(published_log_files))
+            self.assertEqual(published_log_files, log_files)
+
+            files = pq.read_table(pages_data / "catalog" / "files.parquet").to_pylist()
+            self.assertEqual(
+                [(run["run_id"], f"runs/{run['run_id']}/logs-pytest.parquet", "pytest", 2)],
+                [(row["run_id"], row["path"], row["log_source"], row["row_count"]) for row in files if row["kind"] == "logs"],
+            )
+
+    def test_raw_root_for_run_path_skips_published_parquet_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            nightly_run = root / "nightly-run"
+            (nightly_run / "raw").mkdir(parents=True)
+            raw_artifact = root / "raw-artifact"
+            (raw_artifact / "s3-tests").mkdir(parents=True)
+            published_run = root / "published-run"
+            published_run.mkdir()
+            (published_run / "metadata.parquet").write_bytes(b"PAR1")
+
+            self.assertEqual(nightly_run / "raw", build_pages.raw_root_for_run_path(nightly_run))
+            self.assertEqual(raw_artifact, build_pages.raw_root_for_run_path(raw_artifact))
+            self.assertIsNone(build_pages.raw_root_for_run_path(published_run))
+            self.assertIsNone(build_pages.raw_root_for_run_path(root / "run.json"))
+
 
 if __name__ == "__main__":
     unittest.main()

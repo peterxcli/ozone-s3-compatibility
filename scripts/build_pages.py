@@ -200,6 +200,9 @@ def raw_root_for_run_path(path: Path) -> Path | None:
     raw_path = path / "raw"
     if raw_path.is_dir():
         return raw_path
+    # A published Parquet run has no raw logs; its copied log index must be kept.
+    if (path / "metadata.parquet").exists():
+        return None
     return path
 
 
