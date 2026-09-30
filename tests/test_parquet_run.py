@@ -208,6 +208,62 @@ class ParquetRunWriterTests(unittest.TestCase):
             self.assertEqual([1, 2], [row["line_number"] for row in logs])
             self.assertEqual("ERROR", logs[1]["level"])
 
+    def test_write_pages_parquet_dataset_rebuilds_lost_log_index_from_published_logs(self) -> None:
+        run = sample_run()
+        run_id = run["run_id"]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            raw_root = root / "raw"
+            log_path = raw_root / "s3-tests" / "pytest.log"
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text("first line\nERROR failed request\n", encoding="utf-8")
+            empty_log_path = raw_root / "ozone" / "start.log"
+            empty_log_path.parent.mkdir(parents=True)
+            empty_log_path.write_text("", encoding="utf-8")
+            data_dir = root / "data"
+            parquet_run.write_pages_parquet_dataset([run], data_dir, {run_id: raw_root})
+            log_files_path = data_dir / "runs" / run_id / "log-files.parquet"
+
+            for damage in ("emptied", "deleted"):
+                with self.subTest(damage=damage):
+                    if damage == "emptied":
+                        parquet_run.write_parquet(log_files_path, [], parquet_run.LOG_FILES_SCHEMA)
+                    else:
+                        log_files_path.unlink()
+
+                    parquet_run.write_pages_parquet_dataset([run], data_dir)
+
+                    log_files = pq.read_table(log_files_path)
+                    self.assertEqual(parquet_run.LOG_FILES_SCHEMA, log_files.schema)
+                    self.assertEqual(
+                        [
+                            # An empty log file has no rows to name its source, so its file name does.
+                            {
+                                "run_id": run_id,
+                                "log_source": "ozone-start",
+                                "log_file": "ozone-start",
+                                "path": f"runs/{run_id}/logs-ozone-start.parquet",
+                                "line_count": 0,
+                            },
+                            {
+                                "run_id": run_id,
+                                "log_source": "pytest",
+                                "log_file": "s3-tests/pytest.log",
+                                "path": f"runs/{run_id}/logs-pytest.parquet",
+                                "line_count": 2,
+                            },
+                        ],
+                        log_files.to_pylist(),
+                    )
+                    files = pq.read_table(data_dir / "catalog" / "files.parquet").to_pylist()
+                    self.assertEqual(
+                        [
+                            (f"runs/{run_id}/logs-ozone-start.parquet", "ozone-start", 0),
+                            (f"runs/{run_id}/logs-pytest.parquet", "pytest", 2),
+                        ],
+                        [(row["path"], row["log_source"], row["row_count"]) for row in files if row["kind"] == "logs"],
+                    )
+
 
 def run_with_case(run_id: str, started_at: str, **case_fields: str) -> dict:
     run = sample_run()

@@ -588,6 +588,25 @@ def build_log_rows(run_id: str, log_source: str, log_path: Path, raw_root: Path)
     return rows
 
 
+def rebuild_log_file_rows(run_id: str, run_dir: Path, data_dir: Path) -> list[dict[str, Any]]:
+    """Recovers a run's log index from the logs-*.parquet files published next to it."""
+    rows: list[dict[str, Any]] = []
+    for logs_path in sorted(run_dir.glob("logs-*.parquet")):
+        table = pq.read_table(logs_path, columns=["log_source", "log_file"])
+        first_row = table.slice(0, 1).to_pylist()[0] if table.num_rows else {}
+        stem = logs_path.stem.removeprefix("logs-")
+        rows.append(
+            {
+                "run_id": run_id,
+                "log_source": string_field(first_row.get("log_source")) or stem,
+                "log_file": string_field(first_row.get("log_file")) or stem,
+                "path": logs_path.relative_to(data_dir).as_posix(),
+                "line_count": table.num_rows,
+            }
+        )
+    return rows
+
+
 def write_parquet(path: Path, rows: list[dict[str, Any]], schema: pa.Schema) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     table = pa.Table.from_pylist(rows, schema=schema)
@@ -769,10 +788,12 @@ def write_run_dataset(
                 }
             )
         write_parquet(log_files_path, log_file_rows, LOG_FILES_SCHEMA)
-    elif log_files_path.exists():
-        log_file_rows = read_parquet_rows(log_files_path)
     else:
-        write_parquet(log_files_path, log_file_rows, LOG_FILES_SCHEMA)
+        log_file_rows = read_parquet_rows(log_files_path)
+        if not log_file_rows:
+            # Earlier Pages UI refreshes emptied the index of runs whose logs they kept.
+            log_file_rows = rebuild_log_file_rows(run_id, run_dir, data_dir)
+            write_parquet(log_files_path, log_file_rows, LOG_FILES_SCHEMA)
 
     records.append(file_record(data_dir, run_id, log_files_path, "log_files", len(log_file_rows)))
     for row in log_file_rows:
