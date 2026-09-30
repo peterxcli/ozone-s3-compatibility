@@ -6,20 +6,29 @@ import type { CaseSearchClient } from "./search";
 interface RangeResponse {
   status: number;
   etag?: string;
+  lastModified?: string;
   contentRange?: string;
+  contentLength?: string;
   body: Uint8Array;
 }
 
 let initPromise: Promise<unknown> | null = null;
 
-/** The `fetchRange(url, rangeHeader)` callback the WebAssembly engine calls for I/O. */
-function rangeFetcher(cache: RequestCache): (url: string, range: string) => Promise<RangeResponse> {
-  return async (url, range) => {
-    const response = await fetch(url, { headers: { Range: range }, cache });
+/**
+ * The `fetchRange(url, method, range)` callback the WebAssembly engine calls
+ * for I/O. Cross-origin responses hide `Content-Range` and `ETag` unless the
+ * host exposes them; the engine then falls back to `HEAD` and `Last-Modified`.
+ */
+function rangeFetcher(cache: RequestCache): (url: string, method: string, range?: string) => Promise<RangeResponse> {
+  return async (url, method, range) => {
+    const response = await fetch(url, { method, headers: range ? { Range: range } : {}, cache });
+    const header = (name: string) => response.headers.get(name) || undefined;
     return {
       status: response.status,
-      etag: response.headers.get("etag") || undefined,
-      contentRange: response.headers.get("content-range") || undefined,
+      etag: header("etag"),
+      lastModified: header("last-modified"),
+      contentRange: header("content-range"),
+      contentLength: header("content-length"),
       body: new Uint8Array(await response.arrayBuffer()),
     };
   };

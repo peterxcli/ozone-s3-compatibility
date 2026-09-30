@@ -100,7 +100,7 @@ Published Pages data is Parquet by default. The app loads `data/catalog/runs.par
 
 Test-case search runs SQL in the browser with DataFusion compiled to WebAssembly (`case-search/`) against a single file, `data/search/cases.parquet`. The file holds one row per distinct test failure across all runs (repeated history collapses into one row with the runs it appeared in), with one row group per suite and page indexes. DataFusion reads it with HTTP range requests and pushes the search filter into the Parquet scan, so a search fetches only the footer, the `search_text` column, and the pages that hold matches. Fetched byte ranges stay in memory for the rest of the page session, and a republished file is detected by its ETag.
 
-The default workflows host those Parquet files on the same `gh-pages` site as the static UI. For non-Git hosting, build the frontend with `VITE_REPORT_DATA_BASE_URL=https://.../data/` or open the report with `?dataBaseUrl=https://.../data/`; remote hosts must allow browser CORS reads.
+The default workflows host those Parquet files on the same `gh-pages` site as the static UI. For non-Git hosting, build the frontend with `VITE_REPORT_DATA_BASE_URL=https://.../data/` or open the report with `?dataBaseUrl=https://.../data/`; remote hosts must allow browser CORS reads. They should also send `Access-Control-Expose-Headers: Content-Range, ETag`; without it, test-case search makes an extra `HEAD` request and detects republished files by `Last-Modified`.
 
 ## Local Workflow Run
 

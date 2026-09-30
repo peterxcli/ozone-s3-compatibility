@@ -11,6 +11,11 @@
 //! Every later response must carry the same ETag; if the file is republished
 //! mid-session the store fails with [`STALE_OBJECT_MESSAGE`] instead of mixing
 //! bytes from two versions of the file.
+//!
+//! Browsers hide `Content-Range` and `ETag` from cross-origin responses unless
+//! the server lists them in `Access-Control-Expose-Headers`. Without them the
+//! store asks for the size with a `HEAD` request, positions every range by the
+//! offsets it requested, and detects republishing with `Last-Modified`.
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -41,9 +46,11 @@ pub const STALE_OBJECT_MESSAGE: &str = "remote file changed while reading";
 
 const STORE_NAME: &str = "HttpRangeStore";
 
-/// The byte range sent in an HTTP `Range` header.
+/// An HTTP request for (part of) an object.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ByteRequest {
+    /// A `HEAD` request, for the object size.
+    Head,
     /// The last `n` bytes of the object.
     Suffix(u64),
     /// A half-open range of bytes.
@@ -51,21 +58,41 @@ pub enum ByteRequest {
 }
 
 impl ByteRequest {
-    pub fn header_value(&self) -> String {
+    pub fn method(&self) -> &'static str {
         match self {
-            Self::Suffix(length) => format!("bytes=-{length}"),
-            Self::Bounded(range) => format!("bytes={}-{}", range.start, range.end - 1),
+            Self::Head => "HEAD",
+            Self::Suffix(_) | Self::Bounded(_) => "GET",
+        }
+    }
+
+    /// The `Range` header value, if the request has one.
+    pub fn range_header(&self) -> Option<String> {
+        match self {
+            Self::Head => None,
+            Self::Suffix(length) => Some(format!("bytes=-{length}")),
+            Self::Bounded(range) => Some(format!("bytes={}-{}", range.start, range.end - 1)),
         }
     }
 }
 
-/// The parts of an HTTP response the store needs.
-#[derive(Debug, Clone)]
+/// The parts of an HTTP response the store needs. Headers a browser does not
+/// expose to the page are `None`.
+#[derive(Debug, Clone, Default)]
 pub struct ByteResponse {
     pub status: u16,
     pub etag: Option<String>,
+    pub last_modified: Option<String>,
     pub content_range: Option<String>,
+    pub content_length: Option<u64>,
     pub body: Bytes,
+}
+
+impl ByteResponse {
+    /// Identifies the object version: the ETag, or `Last-Modified` when the
+    /// ETag is not exposed.
+    fn version(&self) -> Option<&str> {
+        self.etag.as_deref().or(self.last_modified.as_deref())
+    }
 }
 
 /// Performs a single HTTP range request.
@@ -93,6 +120,8 @@ impl FetchStats {
 #[derive(Debug)]
 struct CachedObject {
     meta: ObjectMeta,
+    /// See [`ByteResponse::version`].
+    version: Option<String>,
     /// Fetched bytes keyed by start offset. Segments never overlap or touch;
     /// adjacent ones are merged on insert.
     segments: BTreeMap<u64, Bytes>,
@@ -194,12 +223,12 @@ impl HttpRangeStore {
         format!("{}/{}", self.origin, location.as_ref())
     }
 
-    fn cached_meta(&self, location: &Path) -> Option<ObjectMeta> {
+    fn cached_meta(&self, location: &Path) -> Option<(ObjectMeta, Option<String>)> {
         self.objects
             .lock()
             .unwrap()
             .get(location)
-            .map(|object| object.meta.clone())
+            .map(|object| (object.meta.clone(), object.version.clone()))
     }
 
     fn cached_slice(&self, location: &Path, range: &Range<u64>) -> Option<Bytes> {
@@ -258,21 +287,37 @@ impl HttpRangeStore {
         }
     }
 
-    /// Returns the object metadata, fetching the tail of the object on first use.
-    async fn object_meta(&self, location: &Path) -> Result<ObjectMeta> {
-        if let Some(meta) = self.cached_meta(location) {
-            return Ok(meta);
+    /// Returns the object metadata and version, fetching the tail of the object
+    /// on first use.
+    async fn object_meta(&self, location: &Path) -> Result<(ObjectMeta, Option<String>)> {
+        if let Some(cached) = self.cached_meta(location) {
+            return Ok(cached);
         }
 
-        let response = self
+        let tail = self
             .request(location, ByteRequest::Suffix(TAIL_PREFETCH_BYTES))
             .await?;
-        let (start, size) = segment_position(&response)?;
+        let (segment, size, version) = match segment_position(&tail)? {
+            Some((start, size)) => (
+                Some((start, tail.body.clone())),
+                size,
+                tail.version().map(str::to_string),
+            ),
+            // Where the tail starts is unknown without Content-Range, so drop it
+            // and ask for the size; later ranges are placed by requested offset.
+            None => {
+                let head = self.request(location, ByteRequest::Head).await?;
+                let size = head.content_length.ok_or_else(|| {
+                    generic_error(format!("no Content-Length for {}", self.url(location)))
+                })?;
+                (None, size, head.version().map(str::to_string))
+            }
+        };
         let meta = ObjectMeta {
             location: location.clone(),
             last_modified: DateTime::<Utc>::UNIX_EPOCH,
             size,
-            e_tag: response.etag.clone(),
+            e_tag: tail.etag.clone(),
             version: None,
         };
 
@@ -280,28 +325,32 @@ impl HttpRangeStore {
         let object = objects
             .entry(location.clone())
             .or_insert_with(|| CachedObject {
-                meta: meta.clone(),
+                meta,
+                version,
                 segments: BTreeMap::new(),
             });
-        object.insert(start, response.body);
-        Ok(object.meta.clone())
+        if let Some((start, bytes)) = segment {
+            object.insert(start, bytes);
+        }
+        Ok((object.meta.clone(), object.version.clone()))
     }
 
     async fn fetch_segment(
         &self,
         location: &Path,
         meta: &ObjectMeta,
+        version: Option<&str>,
         range: Range<u64>,
     ) -> Result<()> {
         let response = self
             .request(location, ByteRequest::Bounded(range.clone()))
             .await?;
-        let (start, size) = segment_position(&response)?;
-        let etag_changed = matches!(
-            (&meta.e_tag, &response.etag),
+        let (start, size) = segment_position(&response)?.unwrap_or((range.start, meta.size));
+        let changed = matches!(
+            (version, response.version()),
             (Some(expected), Some(actual)) if expected != actual
         );
-        if etag_changed || size != meta.size {
+        if changed || size != meta.size {
             return Err(Error::Precondition {
                 path: location.to_string(),
                 source: STALE_OBJECT_MESSAGE.into(),
@@ -321,7 +370,7 @@ impl HttpRangeStore {
     }
 
     async fn read_ranges(&self, location: &Path, ranges: &[Range<u64>]) -> Result<Vec<Bytes>> {
-        let meta = self.object_meta(location).await?;
+        let (meta, version) = self.object_meta(location).await?;
         let requested: Vec<Range<u64>> = ranges
             .iter()
             .filter(|range| range.start < range.end)
@@ -337,7 +386,7 @@ impl HttpRangeStore {
         futures::future::try_join_all(
             segments
                 .into_iter()
-                .map(|range| self.fetch_segment(location, &meta, range)),
+                .map(|range| self.fetch_segment(location, &meta, version.as_deref(), range)),
         )
         .await?;
 
@@ -379,7 +428,7 @@ impl ObjectStore for HttpRangeStore {
     }
 
     async fn get_opts(&self, location: &Path, options: GetOptions) -> Result<GetResult> {
-        let meta = self.object_meta(location).await?;
+        let (meta, _) = self.object_meta(location).await?;
         options.check_preconditions(&meta)?;
 
         let range = if options.head {
@@ -431,16 +480,17 @@ impl ObjectStore for HttpRangeStore {
     }
 }
 
-/// Returns `(start offset, total object size)` for a 200 or 206 response.
-fn segment_position(response: &ByteResponse) -> Result<(u64, u64)> {
+/// Returns `(start offset, total object size)` for a 200 or 206 response, or
+/// `None` for a 206 response whose `Content-Range` the browser does not expose.
+fn segment_position(response: &ByteResponse) -> Result<Option<(u64, u64)>> {
     if response.status == 200 {
-        return Ok((0, response.body.len() as u64));
+        return Ok(Some((0, response.body.len() as u64)));
     }
-    let header = response
-        .content_range
-        .as_deref()
-        .ok_or_else(|| generic_error("206 response without Content-Range"))?;
+    let Some(header) = response.content_range.as_deref() else {
+        return Ok(None);
+    };
     parse_content_range(header)
+        .map(Some)
         .ok_or_else(|| generic_error(format!("unsupported Content-Range: {header}")))
 }
 
@@ -490,7 +540,11 @@ pub(crate) mod tests {
     pub(crate) struct MemoryFetcher {
         pub body: Mutex<Bytes>,
         pub etag: Mutex<String>,
+        pub last_modified: Mutex<String>,
         pub ignore_ranges: bool,
+        /// Answer like a cross-origin server that exposes no extra headers.
+        pub hide_range_headers: bool,
+        pub requests: Mutex<Vec<ByteRequest>>,
     }
 
     impl MemoryFetcher {
@@ -498,7 +552,10 @@ pub(crate) mod tests {
             Self {
                 body: Mutex::new(body.into()),
                 etag: Mutex::new("\"v1\"".to_string()),
+                last_modified: Mutex::new("Tue, 29 Sep 2026 09:18:45 GMT".to_string()),
                 ignore_ranges: false,
+                hide_range_headers: false,
+                requests: Mutex::new(Vec::new()),
             }
         }
     }
@@ -506,26 +563,39 @@ pub(crate) mod tests {
     #[async_trait]
     impl RangeFetcher for MemoryFetcher {
         async fn fetch(&self, _: &str, request: ByteRequest) -> Result<ByteResponse> {
+            self.requests.lock().unwrap().push(request.clone());
             let body = self.body.lock().unwrap().clone();
-            let etag = Some(self.etag.lock().unwrap().clone());
             let size = body.len() as u64;
-            if self.ignore_ranges {
-                return Ok(ByteResponse {
-                    status: 200,
-                    etag,
-                    content_range: None,
-                    body,
-                });
-            }
+            let headers = ByteResponse {
+                etag: (!self.hide_range_headers).then(|| self.etag.lock().unwrap().clone()),
+                last_modified: Some(self.last_modified.lock().unwrap().clone()),
+                content_length: Some(size),
+                ..Default::default()
+            };
             let range = match request {
+                ByteRequest::Head => {
+                    return Ok(ByteResponse {
+                        status: 200,
+                        ..headers
+                    });
+                }
+                _ if self.ignore_ranges => {
+                    return Ok(ByteResponse {
+                        status: 200,
+                        body,
+                        ..headers
+                    });
+                }
                 ByteRequest::Suffix(length) => size.saturating_sub(length)..size,
                 ByteRequest::Bounded(range) => range.start..range.end.min(size),
             };
+            let content_range = format!("bytes {}-{}/{size}", range.start, range.end - 1);
             Ok(ByteResponse {
                 status: 206,
-                etag,
-                content_range: Some(format!("bytes {}-{}/{size}", range.start, range.end - 1)),
+                content_range: (!self.hide_range_headers).then_some(content_range),
+                content_length: Some(range.end - range.start),
                 body: body.slice(range.start as usize..range.end as usize),
+                ..headers
             })
         }
     }
@@ -628,6 +698,7 @@ pub(crate) mod tests {
                 e_tag: None,
                 version: None,
             },
+            version: None,
             segments: BTreeMap::new(),
         };
         object.insert(10, Bytes::from(vec![1; 10]));
@@ -641,6 +712,51 @@ pub(crate) mod tests {
         assert_eq!(object.segments.len(), 1);
         assert_eq!(object.missing(&(0..60)), vec![0..10, 50..60]);
         assert_eq!(object.slice(&(18..22)).unwrap().as_ref(), &[3, 3, 3, 3]);
+    }
+
+    #[tokio::test]
+    async fn reads_by_offset_when_range_headers_are_hidden() {
+        let mut fetcher = MemoryFetcher::new(body(200_000));
+        fetcher.hide_range_headers = true;
+        let fetcher = Arc::new(fetcher);
+        let store = HttpRangeStore::new("https://example.test", fetcher.clone());
+        let path = Path::from("data/search/cases.parquet");
+
+        let bytes = store
+            .get_ranges(&path, &[1_000..1_100, 199_000..200_000])
+            .await
+            .unwrap();
+        let meta = store
+            .get_opts(&path, GetOptions::new().with_head(true))
+            .await
+            .unwrap()
+            .meta;
+
+        assert_eq!(meta.size, 200_000);
+        assert_eq!(bytes[0].as_ref(), &body(200_000)[1_000..1_100]);
+        assert_eq!(bytes[1].as_ref(), &body(200_000)[199_000..]);
+        assert_eq!(
+            fetcher.requests.lock().unwrap()[..2],
+            [ByteRequest::Suffix(TAIL_PREFETCH_BYTES), ByteRequest::Head]
+        );
+    }
+
+    #[tokio::test]
+    async fn detects_republishing_by_last_modified_when_etag_is_hidden() {
+        let mut fetcher = MemoryFetcher::new(body(200_000));
+        fetcher.hide_range_headers = true;
+        let fetcher = Arc::new(fetcher);
+        let store = HttpRangeStore::new("https://example.test", fetcher.clone());
+        let path = Path::from("data/search/cases.parquet");
+
+        store.get_ranges(&path, &[0..10]).await.unwrap();
+        *fetcher.last_modified.lock().unwrap() = "Wed, 30 Sep 2026 09:24:22 GMT".to_string();
+        let error = store
+            .get_ranges(&path, &[100_000..100_010])
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains(STALE_OBJECT_MESSAGE), "{error}");
     }
 
     #[test]

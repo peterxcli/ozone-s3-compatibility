@@ -54,19 +54,31 @@ const fixtureParquet = readFileSync(path.join(fixtureDir, "search-cases.parquet"
 const searchCasesUrl = "https://report.example/data/search/cases.parquet";
 const [latestRun, middleRun, oldestRun] = fixtureRuns;
 
-/** Serves the fixture with HTTP range semantics, the way GitHub Pages does. */
-function fixtureRangeFetcher(requests = []) {
-  return async (url, range) => {
-    requests.push({ url, range });
+/**
+ * Serves the fixture with HTTP range semantics, the way GitHub Pages does.
+ * `hideRangeHeaders` answers like a cross-origin host whose CORS policy does
+ * not expose `Content-Range` or `ETag` to the page.
+ */
+function fixtureRangeFetcher(requests = [], { hideRangeHeaders = false } = {}) {
+  return async (url, method, range) => {
+    requests.push({ url, method, range });
     const size = fixtureParquet.length;
+    const headers = {
+      etag: hideRangeHeaders ? undefined : '"fixture"',
+      lastModified: "Sun, 17 May 2026 02:35:00 GMT",
+    };
+    if (method === "HEAD") {
+      return { status: 200, ...headers, contentLength: String(size), body: new Uint8Array() };
+    }
     const suffix = /^bytes=-(\d+)$/.exec(range);
     const bounded = /^bytes=(\d+)-(\d+)$/.exec(range);
     const start = suffix ? Math.max(0, size - Number(suffix[1])) : Number(bounded[1]);
     const end = suffix ? size - 1 : Math.min(size - 1, Number(bounded[2]));
     return {
       status: 206,
-      etag: '"fixture"',
-      contentRange: `bytes ${start}-${end}/${size}`,
+      ...headers,
+      contentRange: hideRangeHeaders ? undefined : `bytes ${start}-${end}/${size}`,
+      contentLength: String(end - start + 1),
       body: new Uint8Array(fixtureParquet.subarray(start, end + 1)),
     };
   };
@@ -83,12 +95,13 @@ function loadEngine() {
   return enginePromise;
 }
 
-async function openFixtureSession(requests = []) {
+async function openFixtureSession(requests = [], fetcherOptions = {}) {
   const engine = await loadEngine();
   return createCaseSearchSession({
     index: { runs: fixtureRuns },
     searchCasesUrl,
-    createClient: async () => caseSearchClientFromEngine(new engine.CaseSearchEngine(fixtureRangeFetcher(requests))),
+    createClient: async () =>
+      caseSearchClientFromEngine(new engine.CaseSearchEngine(fixtureRangeFetcher(requests, fetcherOptions))),
   });
 }
 
@@ -347,8 +360,28 @@ test("DataFusion reads the search file through ranged requests", async () => {
   await session.search("policy");
 
   assert.ok(requests.length >= 1);
-  assert.ok(requests.every((request) => request.url === searchCasesUrl && /^bytes=/.test(request.range)));
+  assert.ok(
+    requests.every((request) => request.url === searchCasesUrl && request.method === "GET" && /^bytes=/.test(request.range)),
+  );
   assert.ok(session.stats().bytesFetched <= fixtureParquet.length);
+});
+
+test("DataFusion search works when a cross-origin host hides range headers", async () => {
+  const requests = [];
+  const session = await openFixtureSession(requests, { hideRangeHeaders: true });
+  const sameOrigin = await openFixtureSession();
+
+  const results = await session.search("accessdenied");
+
+  assert.equal(session.rowCount, 10);
+  assert.deepEqual(results, await sameOrigin.search("accessdenied"));
+  assert.deepEqual(
+    requests.slice(0, 2).map((request) => [request.method, request.range]),
+    [
+      ["GET", "bytes=-65536"],
+      ["HEAD", undefined],
+    ],
+  );
 });
 
 test("hydrates a Parquet search result with full case detail on demand", async () => {

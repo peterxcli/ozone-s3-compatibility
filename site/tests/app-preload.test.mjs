@@ -97,7 +97,8 @@ test("searches the published cases Parquet file with the lazily loaded DataFusio
 
 test("bundles the DataFusion search engine from the vendored WebAssembly build", () => {
   assert.match(caseSearchEngineSource, /\.\.\/generated\/case-search\/case_search_bg\.wasm\?url/);
-  assert.match(caseSearchEngineSource, /headers: \{ Range: range \}/);
+  assert.match(caseSearchEngineSource, /headers: range \? \{ Range: range \} : \{\}/);
+  assert.match(caseSearchEngineSource, /header\("last-modified"\)/);
 });
 
 test("routes run detail case permalinks without bootstrapping search", () => {

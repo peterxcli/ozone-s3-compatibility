@@ -15,8 +15,9 @@ use crate::{
     store::{ByteRequest, ByteResponse, RangeFetcher},
 };
 
-/// Calls `fetchRange(url, rangeHeader)` supplied by JavaScript. The function
-/// resolves to `{ status, etag?, contentRange?, body: Uint8Array }`.
+/// Calls `fetchRange(url, method, rangeHeader?)` supplied by JavaScript. The
+/// function resolves to `{ status, etag?, lastModified?, contentRange?,
+/// contentLength?, body: Uint8Array }`, with headers the browser hides omitted.
 #[derive(Debug)]
 struct JsRangeFetcher {
     fetch_range: SendWrapper<Function>,
@@ -29,11 +30,15 @@ impl RangeFetcher for JsRangeFetcher {
         let url = url.to_string();
         // JavaScript values are not `Send`; WebAssembly runs on one thread.
         SendWrapper::new(async move {
+            let range = request
+                .range_header()
+                .map_or(JsValue::UNDEFINED, JsValue::from);
             let promise = fetch_range
-                .call2(
+                .call3(
                     &JsValue::NULL,
                     &JsValue::from(&url),
-                    &JsValue::from(request.header_value()),
+                    &JsValue::from(request.method()),
+                    &range,
                 )
                 .map_err(|error| fetch_error(&url, error))?;
             let response = JsFuture::from(Promise::from(promise))
@@ -45,7 +50,11 @@ impl RangeFetcher for JsRangeFetcher {
             Ok(ByteResponse {
                 status: field("status").as_f64().unwrap_or(0.0) as u16,
                 etag: field("etag").as_string(),
+                last_modified: field("lastModified").as_string(),
                 content_range: field("contentRange").as_string(),
+                content_length: field("contentLength")
+                    .as_string()
+                    .and_then(|length| length.trim().parse().ok()),
                 body: Bytes::from(Uint8Array::new(&field("body")).to_vec()),
             })
         })
