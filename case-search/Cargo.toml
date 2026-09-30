@@ -1,0 +1,43 @@
+[package]
+name = "case-search"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "DataFusion test-case search over the published Parquet report, compiled to WebAssembly."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+arrow-json = "59"
+async-trait = "0.1"
+bytes = "1"
+chrono = { version = "0.4", default-features = false }
+# Only the SQL planner and Parquet reader; the search SQL needs no extra function packages.
+datafusion = { version = "55.1.0", default-features = false, features = ["parquet", "sql"] }
+futures = "0.3"
+object_store = { version = "0.13", default-features = false }
+url = "2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# DataFusion reads the wall clock when planning; wasmbind maps it to `Date.now()`.
+chrono = { version = "0.4", default-features = false, features = ["wasmbind"] }
+console_error_panic_hook = "0.1"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+js-sys = "0.3"
+send_wrapper = { version = "0.6", features = ["futures"] }
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "0.4"
+
+[dev-dependencies]
+parquet = { version = "59", default-features = false, features = ["arrow", "brotli"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true

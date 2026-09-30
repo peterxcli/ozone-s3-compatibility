@@ -31,12 +31,14 @@ https://github.com/user-attachments/assets/bf2decf9-bb98-48da-bcbf-e2a2951806f9
 - `scripts/parquet_run.py`: writes and reads the Parquet run data set used by the report.
 - `scripts/build_pages.py`: builds the report catalog, per-run Parquet files, social preview assets, and static Pages output.
 - `scripts/build_parquet_viewer.sh`: rebuilds the vendored Parquet viewer runtime under `site/public/`.
+- `scripts/build_case_search.sh`: rebuilds the DataFusion test-case search engine under `site/src/generated/case-search/`.
 - `scripts/compare_runs.py`: writes PR-vs-main comparison markdown.
 - `scripts/generate_s3_tests_failure_audit.py`: generates the grouped `s3-tests` failure audit in `docs/s3-tests-failure-audit/`.
 - `site/`: Vue 3 + Vite report frontend.
 - `site/tests/`: Node test coverage for report UI and frontend data helpers.
 - `tests/`: Python test coverage for Pages output, Parquet data, custom-domain publishing, and PR comparison comments.
 - `parquet-viewer/`: vendored Dioxus/WASM Parquet viewer source used by the embedded inspector.
+- `case-search/`: Rust crate that compiles DataFusion to WebAssembly for test-case search over HTTP range requests.
 - `docs/`: PR comment bot setup, HDDS-12716 compatibility mapping, and generated failure-audit documentation.
 - `.github/act/`: local `act` runner image and sample event.
 - `out/`, `run/`, `.work/`: generated local state.
@@ -67,6 +69,14 @@ cargo install dioxus-cli --version 0.7.3 --locked
 npm --prefix site run build:parquet-viewer
 ```
 
+Rebuild the test-case search engine after changing `case-search/` (the CLI version must match the `wasm-bindgen` crate in `case-search/Cargo.lock`):
+
+```bash
+cargo install wasm-bindgen-cli --version 0.2.129 --locked
+npm --prefix site run build:case-search
+cargo test --manifest-path case-search/Cargo.toml
+```
+
 Run a narrow local compatibility smoke test:
 
 ```bash
@@ -86,9 +96,11 @@ Serve `out/pages` with any static file server.
 
 ## Report Data
 
-Published Pages data is Parquet by default. The app loads `data/catalog/runs.parquet` first, then fetches per-run Parquet files for metadata, suites, cases, search rows, log files, and logs on demand through DuckDB-Wasm. The report also ships `data/catalog/files.parquet`, which powers the embedded file browser and lineage view for the published data set.
+Published Pages data is Parquet by default. The app loads `data/catalog/runs.parquet` first, then fetches per-run Parquet files for metadata, suites, cases, log files, and logs on demand through DuckDB-Wasm. The report also ships `data/catalog/files.parquet`, which powers the embedded file browser and lineage view for the published data set.
 
-The default workflows host those Parquet files on the same `gh-pages` site as the static UI. For non-Git hosting, build the frontend with `VITE_REPORT_DATA_BASE_URL=https://.../data/` or open the report with `?dataBaseUrl=https://.../data/`; remote hosts must allow browser CORS reads.
+Test-case search runs SQL in the browser with DataFusion compiled to WebAssembly (`case-search/`) against a single file, `data/search/cases.parquet`. The file holds one row per distinct test failure across all runs (repeated history collapses into one row with the runs it appeared in), with one row group per suite and page indexes. DataFusion reads it with HTTP range requests and pushes the search filter into the Parquet scan, so a search fetches only the footer, the `search_text` column, and the pages that hold matches. Fetched byte ranges stay in memory for the rest of the page session, and a republished file is detected by its ETag.
+
+The default workflows host those Parquet files on the same `gh-pages` site as the static UI. For non-Git hosting, build the frontend with `VITE_REPORT_DATA_BASE_URL=https://.../data/` or open the report with `?dataBaseUrl=https://.../data/`; remote hosts must allow browser CORS reads. They should also send `Access-Control-Expose-Headers: Content-Range, ETag`; without it, test-case search makes an extra `HEAD` request and detects republished files by `Last-Modified`.
 
 ## Local Workflow Run
 

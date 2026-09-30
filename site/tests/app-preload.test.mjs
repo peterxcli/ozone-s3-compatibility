@@ -12,6 +12,7 @@ const suiteCardSource = readFileSync(path.join(siteRoot, "src", "components", "S
 const reportSource = readFileSync(path.join(siteRoot, "src", "lib", "report.ts"), "utf8");
 const envSource = readFileSync(path.join(siteRoot, "src", "env.d.ts"), "utf8");
 const duckdbClientSource = readFileSync(path.join(siteRoot, "src", "lib", "duckdbParquetQueryClient.ts"), "utf8");
+const caseSearchEngineSource = readFileSync(path.join(siteRoot, "src", "lib", "caseSearchEngine.ts"), "utf8");
 
 test("defers search and history detail Parquet files until user demand", () => {
   assert.doesNotMatch(appSource, /scheduleSearchSessionPreload\(\);/);
@@ -75,7 +76,6 @@ test("can opt into the Parquet report data path", () => {
   assert.match(appSource, /createDuckDbParquetQueryClient/);
   assert.match(reportSource, /function fetchReportIndex/);
   assert.match(reportSource, /fetchParquetIndexPayload/);
-  assert.match(appSource, /fetchParquetSearchIndexPayload/);
   assert.match(appSource, /hydrateParquetSearchResultDetail/);
 });
 
@@ -89,9 +89,16 @@ test("can opt into DuckDB cached HTTP reads for Parquet data", () => {
   assert.match(duckdbClientSource, /falling back to direct HTTP Parquet reads/);
 });
 
-test("loads Parquet search from a global index instead of per-run search files", () => {
-  assert.match(appSource, /fetchParquetSearchIndexPayload\([\s\S]*currentIndex,[\s\S]*fetchOptions\.parquetClient,[\s\S]*`\$\{reportDataBaseUrl\}search\/index\.parquet`,[\s\S]*\)/);
-  assert.doesNotMatch(appSource, /parquetDetailPath\(summary,\s*"search-rows\.parquet"\)/);
+test("searches the published cases Parquet file with the lazily loaded DataFusion engine", () => {
+  assert.match(appSource, /createCaseSearchSession\(\{[\s\S]*`\$\{reportDataBaseUrl\}search\/cases\.parquet`/);
+  assert.match(appSource, /import\("\.\/lib\/caseSearchEngine"\)\.then\(\(module\) => module\.createCaseSearchClient\(cache\)\)/);
+  assert.doesNotMatch(appSource, /search-rows\.parquet|search-index\.json|search\/index\.parquet|IndexedDB/);
+});
+
+test("bundles the DataFusion search engine from the vendored WebAssembly build", () => {
+  assert.match(caseSearchEngineSource, /\.\.\/generated\/case-search\/case_search_bg\.wasm\?url/);
+  assert.match(caseSearchEngineSource, /headers: range \? \{ Range: range \} : \{\}/);
+  assert.match(caseSearchEngineSource, /header\("last-modified"\)/);
 });
 
 test("routes run detail case permalinks without bootstrapping search", () => {

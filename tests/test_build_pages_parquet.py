@@ -40,8 +40,9 @@ class BuildPagesParquetTests(unittest.TestCase):
 
             self.assertTrue((root / "pages" / "data" / "catalog" / "runs.parquet").exists())
             self.assertTrue((root / "pages" / "data" / "catalog" / "files.parquet").exists())
-            self.assertTrue((root / "pages" / "data" / "runs" / run["run_id"] / "search-rows.parquet").exists())
-            self.assertTrue((root / "pages" / "data" / "search" / "index.parquet").exists())
+            self.assertTrue((root / "pages" / "data" / "search" / "cases.parquet").exists())
+            self.assertFalse((root / "pages" / "data" / "search-index.json").exists())
+            self.assertFalse((root / "pages" / "data" / "runs" / run["run_id"] / "search-rows.parquet").exists())
 
     def test_build_pages_parquet_mode_omits_json_and_reads_existing_parquet_runs(self) -> None:
         old_run = sample_run()
@@ -64,6 +65,8 @@ class BuildPagesParquetTests(unittest.TestCase):
             old_log.write_text("old log line\n", encoding="utf-8")
             existing_data = root / "existing" / "data"
             parquet_run.write_pages_parquet_dataset([old_run], existing_data, {old_run["run_id"]: old_raw_root})
+            # Published by earlier builds; must not survive a republish.
+            (existing_data / "runs" / old_run["run_id"] / "search-rows.parquet").write_bytes(b"PAR1")
 
             run_json = root / "run.json"
             run_json.write_text(json.dumps(new_run), encoding="utf-8")
@@ -88,13 +91,12 @@ class BuildPagesParquetTests(unittest.TestCase):
 
             pages_data = root / "pages" / "data"
             self.assertFalse((pages_data / "index.json").exists())
-            self.assertFalse((pages_data / "search-index.json").exists())
             self.assertFalse((pages_data / "index").exists())
-            self.assertTrue((pages_data / "search" / "index.parquet").exists())
-            self.assertFalse(any(path.suffix == ".json" for path in (pages_data / "search").glob("**/*")))
+            self.assertEqual(["cases.parquet"], sorted(path.name for path in (pages_data / "search").iterdir()))
             self.assertFalse((pages_data / "runs" / f"{new_run['run_id']}.json").exists())
             self.assertFalse((pages_data / "runs" / f"{old_run['run_id']}.json").exists())
             self.assertTrue((pages_data / "runs" / old_run["run_id"] / "logs-pytest.parquet").exists())
+            self.assertFalse((pages_data / "runs" / old_run["run_id"] / "search-rows.parquet").exists())
 
             catalog = pq.read_table(pages_data / "catalog" / "runs.parquet").to_pylist()
             self.assertEqual([new_run["run_id"], old_run["run_id"]], [row["run_id"] for row in catalog])

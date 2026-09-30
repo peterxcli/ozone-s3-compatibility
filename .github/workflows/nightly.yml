@@ -102,22 +102,29 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
-      - name: Cache Parquet viewer Rust build
+      - name: Cache WebAssembly Rust builds
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/dx
+            ~/.cargo/bin/wasm-bindgen
             ~/.cargo/registry
             ~/.cargo/git
             parquet-viewer/target
-          key: ${{ runner.os }}-parquet-viewer-dx-0.7.3-${{ hashFiles('parquet-viewer/Cargo.lock', 'parquet-viewer/Cargo.toml') }}
+            case-search/target
+          key: ${{ runner.os }}-wasm-dx-0.7.3-${{ hashFiles('parquet-viewer/Cargo.lock', 'parquet-viewer/Cargo.toml', 'case-search/Cargo.lock', 'case-search/Cargo.toml') }}
 
-      - name: Set up Parquet viewer WASM toolchain
+      - name: Set up WebAssembly toolchain
         run: |
           set -euo pipefail
           rustup target add wasm32-unknown-unknown
           if ! command -v dx >/dev/null 2>&1 || ! dx --version | grep -q '0\.7\.3'; then
             cargo install dioxus-cli --version 0.7.3 --locked
+          fi
+          # The case search engine needs the wasm-bindgen CLI pinned in its Cargo.lock.
+          wasm_bindgen_version="$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' case-search/Cargo.lock)"
+          if ! command -v wasm-bindgen >/dev/null 2>&1 || [ "$(wasm-bindgen --version | awk '{print $2}')" != "${wasm_bindgen_version}" ]; then
+            cargo install wasm-bindgen-cli --version "${wasm_bindgen_version}" --locked --force
           fi
 
       - name: Install workflow dependencies

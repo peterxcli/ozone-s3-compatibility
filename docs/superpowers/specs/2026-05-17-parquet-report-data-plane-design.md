@@ -33,14 +33,14 @@ data/
     runs.parquet
     files.parquet
     charts.parquet
-    search-manifest.parquet
+  search/
+    cases.parquet
   runs/
     <run_id>/
       suites.parquet
       cases-s3-tests.parquet
       cases-mint.parquet
       features.parquet
-      search-rows.parquet
       logs-pytest.parquet
       logs-mint-console.parquet
       logs-mint-json.parquet
@@ -147,26 +147,32 @@ stacktrace_id: string nullable
 
 The UI reconstructs exact log snippets by ordering rows by `line_number` and joining `raw_line` with newlines. Parsed fields are best-effort and must not replace `raw_line`.
 
-### Search Rows
+### Search Cases
 
-Search rows are also Parquet, not JSON. They are optimized for frontend search and modal routing.
+Search uses one file, `search/cases.parquet`, queried in the browser by DataFusion compiled to WebAssembly (`case-search/`). It holds one row per distinct test failure across all runs: rows whose case identity and failure content match after ignoring memory addresses and line numbers collapse into one row that lists every run it appeared in.
 
 Required columns:
 
 ```text
-run_id: string
+content_id: int32
 suite_key: string
 case_id: string
-status: string
-features: list<string>
 test_name: string
 classname: string
+status: string
+features: list<string>
 message: string
 detail_preview: string
 source_path: string
 source_symbol: string
 search_text: string
+latest_run_id: string
+latest_run_ordinal: int32
+run_ids: list<string>
+run_count: int32
 ```
+
+`search_text` holds the sorted, unique, lowercase words of the searchable columns, with and without camelCase splitting, so a word-prefix search is a `LIKE '% word%'` filter. The file has one row group per suite, page indexes, and dictionary encoding only on low-cardinality columns, so DataFusion can push the filter into the scan and fetch only the pages of other columns that hold matches. It uses Brotli, which compresses this text-heavy file about a third smaller than Zstandard.
 
 `detail_preview` may be truncated for search display, while `cases-*.parquet` keeps the full detail.
 
