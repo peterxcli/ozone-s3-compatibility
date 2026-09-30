@@ -122,6 +122,11 @@ def fixture_runs() -> list[dict]:
                     detail="SignatureDoesNotMatch while validating signed chunks",
                     features=["headers"],
                 ),
+                # Parametrizations failing the same way stay separate cases.
+                *(
+                    case(f"test_object_lock[{mode}]", functional, "fail", "InvalidRequest: object lock not enabled", features=["lock"])
+                    for mode in ["governance", "compliance"]
+                ),
                 listing,
                 many_keys,
             ],

@@ -252,6 +252,21 @@ class SearchCaseTests(unittest.TestCase):
         self.assertEqual([["run-2"], ["run-1"]], [row["run_ids"] for row in s3_rows])
         self.assertEqual([0, 1], [row["latest_run_ordinal"] for row in s3_rows])
 
+    def test_parametrized_cases_keep_their_own_rows(self) -> None:
+        run = sample_run()
+        failure = run["suites"]["s3_tests"]["non_passing_cases"][0]
+        run["suites"]["s3_tests"]["non_passing_cases"] = [
+            {**failure, "name": "test_multipart_checksum[sha256]"},
+            {**failure, "name": "test_multipart_checksum[crc32]"},
+        ]
+
+        rows = parquet_run.build_search_case_rows([run])
+
+        s3_rows = {row["test_name"]: row for row in rows if row["suite_key"] == "s3_tests"}
+        self.assertEqual(["test_multipart_checksum[crc32]", "test_multipart_checksum[sha256]"], sorted(s3_rows))
+        self.assertIn(" crc32 ", s3_rows["test_multipart_checksum[crc32]"]["search_text"])
+        self.assertNotIn(" crc32 ", s3_rows["test_multipart_checksum[sha256]"]["search_text"])
+
     def test_search_text_holds_split_and_joined_lowercase_words(self) -> None:
         rows = parquet_run.build_search_case_rows([sample_run()])
 

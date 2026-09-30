@@ -272,7 +272,7 @@ test("reopens the index without the HTTP cache when it is republished mid-sessio
 test("DataFusion finds cases by split and joined words across suites", async () => {
   const session = await openFixtureSession();
 
-  assert.equal(session.rowCount, 8);
+  assert.equal(session.rowCount, 10);
 
   const joined = await session.search("accessdenied");
   const split = await session.search("Access Denied");
@@ -325,6 +325,19 @@ test("DataFusion narrows results to the run named in the query", async () => {
     [["ChecksumSHA256 missing", middleRun.run_id, false]],
   );
   assert.ok(results[0].matchedFields.includes("run"));
+});
+
+test("DataFusion keeps parametrized cases that fail the same way apart", async () => {
+  const session = await openFixtureSession();
+
+  const one = await session.search("compliance");
+  const both = await session.search("object lock");
+
+  assert.deepEqual(one.map((result) => result.testName), ["test_object_lock[compliance]"]);
+  assert.deepEqual(
+    both.map((result) => result.testName).sort(),
+    ["test_object_lock[compliance]", "test_object_lock[governance]"],
+  );
 });
 
 test("DataFusion reads the search file through ranged requests", async () => {

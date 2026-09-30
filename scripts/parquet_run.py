@@ -442,22 +442,15 @@ def build_case_rows(run: dict[str, Any], suite_key: str, suite: dict[str, Any]) 
     return rows
 
 
-def search_case_key(suite_key: str, case: dict[str, Any], detail_preview: str) -> tuple[tuple[str, ...], ...]:
+def search_case_key(case: dict[str, Any], detail_preview: str) -> tuple[tuple[str, ...], ...]:
     """Groups repeated history: the same test failing the same way in many runs."""
-    source_path = comparable_text(case["source_path"])
-    source_symbol = comparable_text(case["source_symbol"])
-    if source_path or source_symbol:
-        identity = ("source", suite_key, source_path, source_symbol)
-    else:
-        identity = ("case", suite_key, comparable_text(case["classname"]), comparable_text(case["name"]))
-    # Suites without a source file are only identified by their target and function.
-    target = "" if suite_key == "s3_tests" else f"{case['classname']}\n{case['name']}"
+    # The exact name keeps each pytest parametrization in its own row.
+    identity = (case["suite_key"], case["classname"], case["name"])
     content = (
         comparable_content_text(case["status"]),
         " ".join(sorted(comparable_content_text(feature) for feature in case["features"])),
         comparable_content_text(case["message"]),
         comparable_content_text(detail_preview),
-        comparable_content_text(target),
     )
     return identity, content
 
@@ -471,7 +464,7 @@ def build_search_case_rows(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             suite_label = string_field(suite.get("label")) or suite_file_stem(suite_key)
             for case in build_case_rows(run, suite_key, suite):
                 detail_preview = case["detail"][:SEARCH_DETAIL_PREVIEW_CHARS]
-                key = search_case_key(suite_key, case, detail_preview)
+                key = search_case_key(case, detail_preview)
                 group = groups.get(key)
                 if group is None:
                     group = groups[key] = {
