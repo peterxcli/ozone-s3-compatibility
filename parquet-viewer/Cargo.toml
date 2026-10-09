@@ -60,13 +60,16 @@ dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version 
 mimetype-detector = "0.3.7"
 
 [profile.release]
-strip = true
+# dx strips the wasm with rust-objcopy before running wasm-bindgen. Since Rust 1.99 (LLVM 23),
+# `strip = true` also removes the `__wasm_bindgen_unstable` section that wasm-bindgen reads.
+strip = "debuginfo"
 opt-level = "s"
 panic = "abort"
 
 [profile.debug-strip]
 inherits = "dev"
-strip = true
+# See the release profile: `strip = true` breaks dx builds on Rust 1.99+.
+strip = "debuginfo"
 panic = "abort"
 opt-level = 2
 
