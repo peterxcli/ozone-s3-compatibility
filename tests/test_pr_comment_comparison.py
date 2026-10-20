@@ -231,6 +231,45 @@ class ComparisonMarkdownTests(unittest.TestCase):
         self.assertIn("Still non-passing", markdown)
         self.assertIn("latest published main run", markdown)
 
+    def test_latest_run_from_dir_reads_published_parquet_runs(self) -> None:
+        import parquet_run
+
+        baseline = {
+            "run_id": "2026-05-01T03-15-00Z",
+            "started_at": "2026-05-01T02:15:00Z",
+            "finished_at": "2026-05-01T03:15:00Z",
+            "status": "completed",
+            "suites": {
+                "s3_tests": {
+                    "label": "s3-tests",
+                    "status": "completed",
+                    "summary": suite_summary(passed=2, failed=1),
+                    "included_case_strategy": "non_passing_only",
+                    "non_passing_cases": [
+                        {
+                            "classname": "s3tests.functional.test_bucket",
+                            "name": "test_still_failure",
+                            "status": "fail",
+                            "message": "still failing",
+                        },
+                    ],
+                }
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            parquet_run.write_run_dataset(baseline, data_dir)
+
+            loaded = compare_runs.latest_run_from_dir(data_dir / "runs")
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual("2026-05-01T03-15-00Z", loaded["run_id"])
+        self.assertEqual(
+            ["test_still_failure"],
+            [case["name"] for case in loaded["suites"]["s3_tests"]["non_passing_cases"]],
+        )
+
 
 class WorkflowDisplayTests(unittest.TestCase):
     def test_pr_workflow_run_name_uses_pr_and_upstream_commits(self) -> None:

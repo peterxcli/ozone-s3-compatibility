@@ -56,6 +56,12 @@ def latest_run_from_dir(runs_dir: Path) -> dict[str, Any] | None:
         return None
 
     runs = [load_json(path) for path in sorted(runs_dir.glob("*.json"))]
+    run_dirs = sorted(path for path in runs_dir.iterdir() if (path / "metadata.parquet").is_file())
+    if run_dirs:
+        # Published runs moved from one JSON file each to one Parquet dataset directory each.
+        from parquet_run import read_run_dataset
+
+        runs.extend(read_run_dataset(path) for path in run_dirs)
     if not runs:
         return None
 
