@@ -73,7 +73,7 @@ if ! gh api \
   --method POST \
   "repos/${OZONE_OWNER}/${OZONE_REPO_NAME}/issues/${OZONE_PR_NUMBER}/comments" \
   --input "${COMMENT_PAYLOAD_PATH}"; then
-  echo "::warning::Failed to post PR comment to ${target_repo}#${OZONE_PR_NUMBER}; leaving markdown in the workflow artifact."
+  echo "::warning::Failed to post PR comment to ${target_repo}#${OZONE_PR_NUMBER} using ${token_source}. A cross-repository comment needs a classic PAT with public_repo scope; fine-grained PATs cannot write to repositories you do not own. Leaving markdown in the workflow artifact."
   cat "${COMMENT_BODY_PATH}"
   exit 0
 fi
